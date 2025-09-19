@@ -1,4 +1,5 @@
     
+    
 from django.urls import path, include
 from django.contrib.auth import views as auth_views
 from . import views
@@ -64,4 +65,5 @@ urlpatterns = [
     path('channel_response_rates/', views.channel_response_rates, name='channel_response_rates'),
     path('api/ai-metrics/overall-accuracy/', views.get_overall_accuracy, name='overall_accuracy'),
     path('api/market-alerts/recent/', views.recent_market_alerts, name='recent_market_alerts'),
+    path('api/discovered-leads/', views.get_discovered_leads, name='get_discovered_leads'),
 ]

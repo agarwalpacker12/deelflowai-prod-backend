@@ -1,4 +1,67 @@
+
+
 from django.db import models
+
+# --- Campaign Models for Multi-Channel Outreach ---
+
+# --- Outreach Campaign Model ---
+class OutreachCampaign(models.Model):
+    CHANNEL_CHOICES = [
+        ('sms', 'SMS'),
+        ('email', 'Email'),
+        ('voice', 'Voice'),
+        ('social', 'Social Media'),
+        ('mail', 'Direct Mail'),
+    ]
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    channel = models.CharField(max_length=20, choices=CHANNEL_CHOICES)
+    message_template = models.TextField()
+    scheduled_time = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.channel})"
+
+class CampaignRecipient(models.Model):
+    campaign = models.ForeignKey(OutreachCampaign, on_delete=models.CASCADE, related_name="recipients")
+    lead = models.ForeignKey('DiscoveredLead', on_delete=models.CASCADE)
+    status = models.CharField(max_length=50, default="pending")  # pending, sent, delivered, failed
+    response = models.TextField(blank=True, null=True)
+    sent_at = models.DateTimeField(blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.lead.address} - {self.campaign.name}"
+
+
+# --- Lead Discovery Model ---
+class DiscoveredLead(models.Model):
+    SOURCE_CHOICES = [
+        ('public_record', 'Public Record'),
+        ('property_site', 'Property Site'),
+        ('social_media', 'Social Media'),
+        ('court_record', 'Court Record'),
+        ('mls', 'MLS'),
+    ]
+    owner_name = models.CharField(max_length=255, blank=True, null=True)
+    address = models.CharField(max_length=255)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    state = models.CharField(max_length=50, blank=True, null=True)
+    zipcode = models.CharField(max_length=20, blank=True, null=True)
+    source = models.CharField(max_length=50, choices=SOURCE_CHOICES)
+    details = models.TextField(blank=True, null=True)
+    motivation_score = models.FloatField(default=0.0)
+    property_condition = models.CharField(max_length=100, blank=True, null=True)
+    financial_situation = models.CharField(max_length=100, blank=True, null=True)
+    timeline_urgency = models.CharField(max_length=100, blank=True, null=True)
+    negotiation_style = models.CharField(max_length=100, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.address} ({self.source})"
+
 # --- AI Performance Metrics Models ---
 class VoiceAICallMetrics(models.Model):
     total_calls = models.IntegerField(default=0)

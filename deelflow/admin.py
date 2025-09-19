@@ -1,3 +1,8 @@
+from .models import OutreachCampaign, CampaignRecipient
+
+
+
+
 from django.contrib import admin
 from .models import (
     BusinessMetrics, HistoricalMetrics, ActivityFeed,
@@ -22,6 +27,24 @@ from .models import (
 admin.site.site_header = "DeelFlow Administration"
 admin.site.site_title = "DeelFlow Admin Portal"
 admin.site.index_title = "Welcome to DeelFlow Dashboard"
+@admin.register(OutreachCampaign)
+class OutreachCampaignAdmin(admin.ModelAdmin):
+    list_display = ("name", "channel", "scheduled_time", "created_at")
+    search_fields = ("name", "description")
+    list_filter = ("channel",)
+
+@admin.register(CampaignRecipient)
+class CampaignRecipientAdmin(admin.ModelAdmin):
+    list_display = ("campaign", "lead", "status", "sent_at")
+    search_fields = ("lead__address", "campaign__name")
+    list_filter = ("status", "campaign")
+from .models import DiscoveredLead
+
+@admin.register(DiscoveredLead)
+class DiscoveredLeadAdmin(admin.ModelAdmin):
+    list_display = ("address", "owner_name", "source", "motivation_score", "created_at")
+    search_fields = ("address", "owner_name", "city", "state", "zipcode")
+    list_filter = ("source", "state")
 
 @admin.register(BusinessMetrics)
 class BusinessMetricsAdmin(admin.ModelAdmin):

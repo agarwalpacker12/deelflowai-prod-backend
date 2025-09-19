@@ -4,9 +4,8 @@ import os
 import django
 from datetime import datetime
 
-
 # Setup Django environment
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'deelflowAI.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'deelflowAI.deelflowAI.settings')
 django.setup()
 
 from deelflow.models import PropertyAIAnalysis

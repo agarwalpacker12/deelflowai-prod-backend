@@ -1,3 +1,13 @@
+# API view to fetch discovered leads
+from .models import DiscoveredLead
+from rest_framework import serializers
+
+class DiscoveredLeadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DiscoveredLead
+        fields = '__all__'
+
+
 
 # --- Required imports ---
 from rest_framework.decorators import api_view
@@ -5,6 +15,17 @@ from rest_framework.response import Response
 from .models import VoiceAICallMetrics, VisionAnalysisMetrics
 import requests
 from twilio.rest import Client
+
+
+
+@api_view(['GET'])
+def get_discovered_leads(request):
+    leads = DiscoveredLead.objects.order_by('-created_at')[:100]
+    serializer = DiscoveredLeadSerializer(leads, many=True)
+    return Response({
+        'status': 'success',
+        'leads': serializer.data
+    })
 
 # API view to get the latest overall AI accuracy
 @api_view(['GET'])
