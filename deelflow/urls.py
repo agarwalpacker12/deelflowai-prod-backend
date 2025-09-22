@@ -66,4 +66,8 @@ urlpatterns = [
     path('api/ai-metrics/overall-accuracy/', views.get_overall_accuracy, name='overall_accuracy'),
     path('api/market-alerts/recent/', views.recent_market_alerts, name='recent_market_alerts'),
     path('api/discovered-leads/', views.get_discovered_leads, name='get_discovered_leads'),
+    path('get_role_by_id/', views.get_role_by_id, name='get_role_by_id'),
+    path('edit_role/', views.edit_role, name='edit_role'),
+    path('get_all_users/', views.get_all_users, name='get_all_users'),
+    path('create_campaign/', views.create_campaign, name='create_campaign'),
 ]

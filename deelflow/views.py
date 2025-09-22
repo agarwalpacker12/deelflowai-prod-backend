@@ -155,6 +155,7 @@ import re
 import requests
 import time
 from typing import IO
+from django.db.models import Q
 from django.http import response
 from django.views.decorators.csrf import ensure_csrf_cookie
 import os
@@ -798,14 +799,17 @@ def update_role_permissions(request):
         )
         
 
-# API view to create a new role
-@api_view(['POST'])
-#@permission_classes([IsAuthenticated])
+@api_view(["POST"])
 def create_role(request):
     """
     Create Role API
     POST /api/roles/create
-    Payload: { "name": "manager", "label": "Manager", "permissions": ["perm1", "perm2"] }
+    Payload: 
+    {
+        "name": "manager", 
+        "label": "Manager", 
+        "permissions": ["manage_roles", "manage_campaign"]
+    }
     """
     try:
         name = request.data.get("name")
@@ -831,9 +835,15 @@ def create_role(request):
 
         with transaction.atomic():
             role = Role.objects.create(name=name, label=label)
+
+            # Handle permissions (case-insensitive matching)
             if permissions and isinstance(permissions, list):
-                perms = Permission.objects.filter(name__in=permissions)
+                query = Q()
+                for perm_name in permissions:
+                    query |= Q(name__iexact=perm_name)
+                perms = Permission.objects.filter(query)
                 role.permissions.set(perms)
+
             role.save()
 
         permissions_data = [
@@ -1380,3 +1390,220 @@ def recent_market_alerts(request):
         "status": "success",
         "alerts": alerts
     })
+    
+    
+@api_view(['POST'])
+def get_role_by_id(request):
+    role_id = request.data.get('role_id')
+    if not role_id:
+        return Response({"status": "error", "message": "role_id is required"}, status=400)
+    try:
+        role = Role.objects.get(id=role_id)
+        permissions = [
+            {"id": perm.id, "name": perm.name, "label": perm.label}
+            for perm in role.permissions.all()
+        ]
+        data = {
+            "id": role.id,
+            "name": role.name,
+            "label": role.label,
+            "permissions": permissions,
+            "created_at": role.created_at,
+            "updated_at": role.updated_at
+        }
+        return Response({"status": "success", "data": data}, status=200)
+    except Role.DoesNotExist:
+        return Response({"status": "error", "message": "Role not found"}, status=404)
+
+
+@api_view(['GET'])
+def get_all_users(request):
+    try:
+        users = User.objects.all()
+        users_data = []
+        for user in users:
+            users_data.append({
+                "id": user.id,
+                "uuid": str(user.uuid),
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+            })
+        response = {
+            "status": "success",
+            "message": "Users retrieved successfully",
+            "data": users_data,
+            "total_users": len(users_data)
+        }
+        return Response(response, status=200)
+    except Exception as e:
+        return Response(
+            {"status": "error", "message": f"Failed to retrieve users: {str(e)}"},
+            status=200
+        )
+
+
+@api_view(['POST'])
+def edit_role(request):
+    """
+    Edit Role API
+    POST /edit_role/
+    Payload: { "role_id": 1, "name": "new_name", "label": "New Label", "permissions": ["perm1", "perm2"] }
+    """
+    try:
+        role_id = request.data.get("role_id")
+        name = request.data.get("name")
+        label = request.data.get("label")
+        permissions = request.data.get("permissions", [])
+
+        # Validation
+        if not role_id:
+            return Response({
+                "status": "error",
+                "message": "Validation failed for editing role",
+                "error_code": "VALIDATION_ERROR",
+                "errors": ["role_id field is required."]
+            }, status=400)
+
+        try:
+            role = Role.objects.get(pk=role_id)
+        except Role.DoesNotExist:
+            return Response({
+                "status": "error",
+                "message": "Role not found",
+                "error_code": "NOT_FOUND"
+            }, status=404)
+
+        # Update name and label if provided
+        if name:
+            # Check for duplicate name
+            if Role.objects.filter(name__iexact=name).exclude(pk=role_id).exists():
+                return Response({
+                    "status": "error",
+                    "message": "Role with this name already exists.",
+                    "error_code": "DUPLICATE_ROLE"
+                }, status=400)
+            role.name = name
+        if label:
+            role.label = label
+
+        # Update permissions if provided
+        if permissions and isinstance(permissions, list):
+            perms = Permission.objects.filter(name__in=permissions)
+            role.permissions.set(perms)
+
+        role.save()
+
+        permissions_data = [
+            {"id": perm.id, "name": perm.name, "label": perm.label}
+            for perm in role.permissions.all()
+        ]
+
+        response = {
+            "status": "success",
+            "message": "Role updated successfully",
+            "data": {
+                "id": role.id,
+                "name": role.name,
+                "label": role.label,
+                "permissions": permissions_data,
+                "created_at": localtime(role.created_at).isoformat(),
+                "updated_at": localtime(role.updated_at).isoformat()
+            }
+        }
+        return Response(response, status=200)
+
+    except Exception as e:
+        return Response(
+            {"status": "error", "message": f"Failed to edit role: {str(e)}"},
+            status=500
+        )
+        
+
+@api_view(["POST"])
+def create_campaign(request):
+    try:
+        data = request.data
+
+        # Required fields
+        required_fields = ["name", "campaign_type", "channel", "budget", "scheduled_at"]
+        missing_fields = [f for f in required_fields if f not in data]
+
+        if missing_fields:
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Validation failed for creating campaign",
+                    "error_code": "VALIDATION_ERROR",
+                    "errors": [f"{f} field is required." for f in missing_fields],
+                },
+                status=400,
+            )
+
+        campaign = Campaign.objects.create(
+            name=data["name"],
+            campaign_type=data["campaign_type"],
+            channel=data["channel"],
+            budget=data.get("budget"),
+            scheduled_at=data.get("scheduled_at"),
+
+            # Geographic Scope
+            geographic_scope_type=data.get("geographic_scope_type"),
+            geographic_scope_values=data.get("geographic_scope_values", []),
+
+            # Target Criteria
+            location=data.get("location"),
+            property_type=data.get("property_type"),
+            minimum_equity=data.get("minimum_equity"),
+
+            # Property Criteria
+            min_price=data.get("min_price"),
+            max_price=data.get("max_price"),
+
+            # Distress Indicators
+            distress_indicators=data.get("distress_indicators", []),
+
+            # Email Content
+            subject_line=data.get("subject_line"),
+            email_content=data.get("email_content"),
+
+            # AI Features
+            use_ai_personalization=data.get("use_ai_personalization", False),
+
+            status=data.get("status", "active"),
+        )
+
+        return Response(
+            {
+                "status": "success",
+                "message": "Campaign created successfully",
+                "data": {
+                    "id": campaign.id,
+                    "name": campaign.name,
+                    "campaign_type": campaign.campaign_type,
+                    "channel": campaign.channel,
+                    "budget": float(campaign.budget) if campaign.budget else None,
+                    "scheduled_at": str(campaign.scheduled_at) if campaign.scheduled_at else None,
+                    "geographic_scope_type": campaign.geographic_scope_type,
+                    "geographic_scope_values": campaign.geographic_scope_values,
+                    "location": campaign.location,
+                    "property_type": campaign.property_type,
+                    "minimum_equity": float(campaign.minimum_equity) if campaign.minimum_equity else None,
+                    "min_price": float(campaign.min_price) if campaign.min_price else None,
+                    "max_price": float(campaign.max_price) if campaign.max_price else None,
+                    "distress_indicators": campaign.distress_indicators,
+                    "subject_line": campaign.subject_line,
+                    "email_content": campaign.email_content,
+                    "use_ai_personalization": campaign.use_ai_personalization,
+                    "status": campaign.status,
+                    "created_at": localtime(campaign.created_at).isoformat(),
+                },
+            },
+            status=201,
+        )
+
+    except Exception as e:
+        return Response(
+            {"status": "error", "message": f"Failed to create campaign: {str(e)}"},
+            status=500,
+        )

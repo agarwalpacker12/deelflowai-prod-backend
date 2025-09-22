@@ -231,10 +231,42 @@ class Campaign(models.Model):
         ("completed", "Completed"),
     ]
 
+    CHANNEL_CHOICES = [
+        ("email", "Email"),
+        ("sms", "SMS"),
+        ("call", "Call"),
+    ]
+
     name = models.CharField(max_length=255)
+    campaign_type = models.CharField(max_length=100, default="new")
+    channel = models.CharField(max_length=20, choices=CHANNEL_CHOICES, default="email")
+    budget = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    scheduled_at = models.DateTimeField(null=True, blank=True)
+
+    # Geographic Scope
+    geographic_scope_type = models.CharField(max_length=50, default="zip", choices=[("zip", "Zip"), ("county", "County"), ("state", "State")])
+    geographic_scope_values = models.CharField(max_length=500, default="[]", blank=True)   # store ["Miami-Dade", "Broward"]
+
+    # Target Criteria
+    location = models.CharField(max_length=255, null=True, blank=True)
+    property_type = models.CharField(max_length=100, null=True, blank=True)
+    minimum_equity = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+
+    # Property Criteria
+    min_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    max_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+
+    # Distress Indicators
+    distress_indicators = models.CharField(max_length=500, default="[]", blank=True)   # e.g. ["Pre-foreclosure", "Tax Liens"]
+
+    # Email Content
+    subject_line = models.CharField(max_length=500, null=True, blank=True)
+    email_content = models.TextField(null=True, blank=True)
+
+    # AI Features
+    use_ai_personalization = models.BooleanField(default=False)
+
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
-    start_date = models.DateField(null=True, blank=True)
-    end_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
