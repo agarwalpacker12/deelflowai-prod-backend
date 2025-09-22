@@ -137,3 +137,9 @@ dmypy.json
 # OS
 .DS_Store
 Thumbs.db
+
+
+# Ignore Python bytecode files
+    *.pyc
+    *.pyo
+    *.pyd
