@@ -6,7 +6,7 @@ from .models import OutreachCampaign, CampaignRecipient
 from django.contrib import admin
 from .models import (
     BusinessMetrics, HistoricalMetrics, ActivityFeed,
-    ComplianceStatus, User, Organization
+    ComplianceStatus, User, Organization, SubscriptionPackage, Subscription
 )
 from .models import (
     VoiceAICallMetrics,
@@ -129,4 +129,18 @@ class UserAdmin(admin.ModelAdmin):
     )
     search_fields = ("email", "first_name", "last_name", "phone", "uuid")
     list_filter = ("role", "is_verified", "is_active", "organization", "created_at")
+    ordering = ("-created_at",)
+
+@admin.register(SubscriptionPackage)
+class SubscriptionPackageAdmin(admin.ModelAdmin):
+    list_display = ("name", "amount", "currency", "interval", "stripe_product_id", "created_at")
+    search_fields = ("name", "description", "stripe_product_id", "stripe_price_id")
+    list_filter = ("currency", "interval", "created_at")
+    ordering = ("amount",)
+
+@admin.register(Subscription)
+class SubscriptionAdmin(admin.ModelAdmin):
+    list_display = ("user", "package", "status", "stripe_subscription_id", "created_at", "updated_at")
+    search_fields = ("user__email", "package__name", "stripe_subscription_id", "stripe_customer_id")
+    list_filter = ("status", "package", "created_at", "updated_at")
     ordering = ("-created_at",)

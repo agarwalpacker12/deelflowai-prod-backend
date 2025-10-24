@@ -1,0 +1,8 @@
+{
+  "status": "commited",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:8140",
+  "loginUser": "admin@deelflowai.com",
+  "loginPassword": "password123"
+}

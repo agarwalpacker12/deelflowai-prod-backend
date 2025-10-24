@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "post properties create new property",
+    "description": "Test the POST /properties/ endpoint to verify that a new property can be created successfully with all required fields, and that the response returns a 200 status with the correct property data including the calculated potential profit."
+  },
+  {
+    "id": "TC002",
+    "title": "get properties retrieve all properties",
+    "description": "Test the GET /properties/ endpoint to ensure it returns a list of all properties with correct data fields and a 200 status code."
+  },
+  {
+    "id": "TC003",
+    "title": "get properties property id retrieve property details",
+    "description": "Test the GET /properties/{property_id}/ endpoint to verify retrieval of a specific property by its ID, returning detailed property information with a 200 status."
+  },
+  {
+    "id": "TC004",
+    "title": "put properties property id update property",
+    "description": "Test the PUT /properties/{property_id}/ endpoint to update existing property details such as address, city, and state, and confirm the update is successful with a 200 status response."
+  },
+  {
+    "id": "TC005",
+    "title": "delete properties property id delete property",
+    "description": "Test the DELETE /properties/{property_id}/ endpoint to ensure a property can be deleted by its ID and that the API returns a 200 status confirming deletion."
+  },
+  {
+    "id": "TC006",
+    "title": "get properties property id ai analysis",
+    "description": "Test the GET /properties/{property_id}/ai-analysis/ endpoint to retrieve AI analysis results for a specific property, verifying the response includes analysis type, confidence score, recommended price, and other relevant data with a 200 status."
+  },
+  {
+    "id": "TC007",
+    "title": "post api auth login user login",
+    "description": "Test the POST /api/auth/login endpoint to verify user login functionality with valid credentials, ensuring the response includes access and refresh tokens and a 200 status."
+  },
+  {
+    "id": "TC008",
+    "title": "post api auth register user registration",
+    "description": "Test the POST /api/auth/register endpoint to verify user registration with valid user details, ensuring successful registration returns a 200 status."
+  },
+  {
+    "id": "TC009",
+    "title": "get stats get dashboard statistics",
+    "description": "Test the GET /stats endpoint to retrieve dashboard statistics including total revenue, active users, properties listed, and total deals, verifying the response data and 200 status."
+  },
+  {
+    "id": "TC010",
+    "title": "get total revenue get total revenue metrics",
+    "description": "Test the GET /total-revenue/ endpoint to verify retrieval of total revenue metrics and change percentage, ensuring the response includes correct data and a 200 status."
+  }
+]
