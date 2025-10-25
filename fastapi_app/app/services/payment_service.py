@@ -11,7 +11,10 @@ from datetime import datetime, timedelta
 import logging
 
 # Configure Stripe
-stripe.api_key = os.getenv('STRIPE_SECRET_KEY', 'sk_test_your_stripe_secret_key_here')
+#os.environ.setdefault('STRIPE_SECRET_KEY', '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')
+stripe.api_key = "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"
+#os.getenv('STRIPE_SECRET_KEY', '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')
+
 
 logger = logging.getLogger(__name__)
 
@@ -59,13 +62,16 @@ class PaymentService:
                                     success_url: str = None, cancel_url: str = None) -> Dict[str, Any]:
         """Create a Stripe checkout session for subscriptions"""
         try:
+            price = self.stripe.Price.retrieve(price_id)
+            mode = 'subscription' if price.recurring else 'payment'
+            print("mode:", mode)
             session_data = {
                 'payment_method_types': ['card'],
                 'line_items': [{
                     'price': price_id,
                     'quantity': 1,
                 }],
-                'mode': 'subscription',
+                'mode': mode,
                 'success_url': success_url or 'http://localhost:5173/payment/success?session_id={CHECKOUT_SESSION_ID}',
                 'cancel_url': cancel_url or 'http://localhost:5173/payment/cancel',
             }
@@ -114,6 +120,8 @@ class PaymentService:
     async def get_subscription_packages(self) -> Dict[str, Any]:
         """Get available subscription packages"""
         try:
+            print("🔑 Stripe API key in use:", os.getenv("STRIPE_SECRET_KEY"))
+
             # Get products and prices from Stripe
             products = self.stripe.Product.list(active=True, limit=10)
             prices = self.stripe.Price.list(active=True, limit=50)

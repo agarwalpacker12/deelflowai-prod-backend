@@ -157,10 +157,15 @@ app.add_middleware(
         "http://127.0.0.1:5173",  # Vite default port
         "http://127.0.0.1:5175",
         "http://127.0.0.1:3000",
-        "http://api.deelflowai.com:8140",
-        "http://api.deelflowai.com:8000",
         "http://dev.deelflowai.com:8140",
-        "http://dev.deelflowai.com:8000"  # Keep old port for compatibility
+        "http://dev.deelflowai.com:8000",
+        "http://dev.deelflowai.com/register",
+        "https://dev.deelflowai.com/login",        
+        "http://apps.deelflowai.com/register",
+        "https://apps.deelflowai.com/login",
+        "https://apps.deelflowai.com",
+        
+         # Keep old port for compatibility
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
@@ -172,6 +177,7 @@ app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=[
         "api.deelflowai.com",
+        "apps.deelflowai.com",
         "dev.deelflowai.com",
         "localhost",
         "127.0.0.1",
@@ -2916,18 +2922,24 @@ async def get_role_stats():
 async def get_role(role_id: int):
     """Get a specific role by ID"""
     try:
-        from deelflow.models import Role
+        from deelflow.models import Role, Permission
         
+        # Fetch the role and its assigned permissions
         role = await sync_to_async(Role.objects.prefetch_related('permissions').get)(id=role_id)
-        
+        role_permissions = await sync_to_async(list)(role.permissions.values_list('id', flat=True))
+
+        # Fetch all permissions
+        all_permissions = await sync_to_async(list)(Permission.objects.all())
+
         # Get permissions using sync_to_async
         permissions_data = []
-        permissions_list = await sync_to_async(list)(role.permissions.all())
-        for perm in permissions_list:
+        #permissions_list = await sync_to_async(list)(role.permissions.all())
+        for perm in all_permissions:
             permissions_data.append({
                 "id": perm.id,
                 "name": perm.name,
-                "label": perm.label
+                "label": perm.label,
+                "status": perm.id in role_permissions
             })
         return {
         "status": "success",
@@ -3106,84 +3118,145 @@ async def update_role(role_id: int, role_data: dict):
     """Update a role by ID"""
     try:
         from deelflow.models import Role, Permission
-        
+        from asgiref.sync import sync_to_async
+
         # Get role
-        role = await sync_to_async(Role.objects.get)(id=role_id)
-        
-        # Update fields if provided
+        role = await sync_to_async(lambda: Role.objects.get(id=role_id))()
+
+        # Update name if provided
         if "name" in role_data:
-            # Check if new name already exists (excluding current role)
-            existing_role = await sync_to_async(Role.objects.filter)(name=role_data["name"]).exclude(id=role_id)
+            existing_role = await sync_to_async(lambda: Role.objects.filter(name=role_data["name"]).exclude(id=role_id))()
             if await sync_to_async(existing_role.exists)():
-                return {
-                    "status": "error",
-                    "message": "Role with this name already exists"
-                }
+                return {"status": "error", "message": "Role with this name already exists"}
             role.name = role_data["name"]
-        
+
+        # Update label
         if "label" in role_data:
             role.label = role_data["label"]
-        
+
         await sync_to_async(role.save)()
-        
-        # Update permissions if provided
+
+        # Update permissions
         if "permissions" in role_data:
-            permissions_data = role_data["permissions"]
-            
-            # Extract permission IDs from complex structure
-            permission_ids = []
-            for group in permissions_data:
-                if isinstance(group, dict) and "permissions" in group:
-                    for perm in group["permissions"]:
-                        if isinstance(perm, dict) and "id" in perm and perm.get("enabled", False):
-                            permission_ids.append(perm["id"])
-            
+            permission_ids = [
+                perm["id"] for perm in role_data["permissions"] if perm.get("status", False)
+            ]
             if permission_ids:
-                permissions = await sync_to_async(list)(Permission.objects.filter(id__in=permission_ids))
+                permissions = await sync_to_async(lambda: list(Permission.objects.filter(id__in=permission_ids)))()
                 await sync_to_async(role.permissions.set)(permissions)
             else:
                 await sync_to_async(role.permissions.clear)()
-        elif "permission_ids" in role_data:
-            permission_ids = role_data["permission_ids"]
-            if permission_ids:
-                permissions = await sync_to_async(list)(Permission.objects.filter(id__in=permission_ids))
-                await sync_to_async(role.permissions.set)(permissions)
-            else:
-                await sync_to_async(role.permissions.clear)()
-        
-        # Get the updated role with permissions
-        role = await sync_to_async(Role.objects.prefetch_related('permissions').get)(id=role.id)
-        
-        # Get permissions data
-        permissions_data = []
-        for perm in role.permissions.all():
-            permissions_data.append({
-                "id": perm.id,
-                "name": perm.name,
-                "label": perm.label
-            })
+
+        # Fetch updated role with permissions
+        role = await sync_to_async(lambda: Role.objects.prefetch_related("permissions").get(id=role_id))()
+        permissions_list = await sync_to_async(list)(role.permissions.all())
+
+        permissions_data = [
+            {"id": perm.id, "name": perm.name, "label": perm.label} for perm in permissions_list
+        ]
+
         return {
-        "status": "success",
+            "status": "success",
             "message": "Role updated successfully",
-        "data": {
+            "data": {
                 "id": role.id,
                 "name": role.name,
                 "label": role.label,
                 "permissions": permissions_data,
                 "created_at": role.created_at.isoformat(),
-                "updated_at": role.updated_at.isoformat()
-            }
+                "updated_at": role.updated_at.isoformat(),
+            },
         }
+
     except Role.DoesNotExist:
-            return {
-            "status": "error",
-            "message": "Role not found"
-        }
+        return {"status": "error", "message": "Role not found"}
     except Exception as e:
-            return {
-            "status": "error",
-            "message": f"Failed to update role: {str(e)}"
-        }
+        return {"status": "error", "message": f"Failed to update role: {str(e)}"}
+
+
+# @app.put("/api/roles/{role_id}/", tags=["Role Management"])
+# async def update_role(role_id: int, role_data: dict):
+#     """Update a role by ID"""
+#     try:
+#         from deelflow.models import Role, Permission
+        
+#         # Get role
+#         role = await sync_to_async(Role.objects.get)(id=role_id)
+        
+#         # Update fields if provided
+#         if "name" in role_data:
+#             # Check if new name already exists (excluding current role)
+#             existing_role = await sync_to_async(Role.objects.filter)(name=role_data["name"]).exclude(id=role_id)
+#             if await sync_to_async(existing_role.exists)():
+#                 return {
+#                     "status": "error",
+#                     "message": "Role with this name already exists"
+#                 }
+#             role.name = role_data["name"]
+        
+#         if "label" in role_data:
+#             role.label = role_data["label"]
+        
+#         await sync_to_async(role.save)()
+        
+#         # Update permissions if provided
+#         if "permissions" in role_data:
+#             permissions_data = role_data["permissions"]
+            
+#             # Extract permission IDs from complex structure
+#             permission_ids = []
+#             for group in permissions_data:
+#                 if isinstance(group, dict) and "permissions" in group:
+#                     for perm in group["permissions"]:
+#                         if isinstance(perm, dict) and "id" in perm and perm.get("enabled", False):
+#                             permission_ids.append(perm["id"])
+            
+#             if permission_ids:
+#                 permissions = await sync_to_async(list)(Permission.objects.filter(id__in=permission_ids))
+#                 await sync_to_async(role.permissions.set)(permissions)
+#             else:
+#                 await sync_to_async(role.permissions.clear)()
+#         elif "permission_ids" in role_data:
+#             permission_ids = role_data["permission_ids"]
+#             if permission_ids:
+#                 permissions = await sync_to_async(list)(Permission.objects.filter(id__in=permission_ids))
+#                 await sync_to_async(role.permissions.set)(permissions)
+#             else:
+#                 await sync_to_async(role.permissions.clear)()
+        
+#         # Get the updated role with permissions
+#         role = await sync_to_async(Role.objects.prefetch_related('permissions').get)(id=role.id)
+        
+#         # Get permissions data
+#         permissions_data = []
+#         for perm in role.permissions.all():
+#             permissions_data.append({
+#                 "id": perm.id,
+#                 "name": perm.name,
+#                 "label": perm.label
+#             })
+#         return {
+#         "status": "success",
+#             "message": "Role updated successfully",
+#         "data": {
+#                 "id": role.id,
+#                 "name": role.name,
+#                 "label": role.label,
+#                 "permissions": permissions_data,
+#                 "created_at": role.created_at.isoformat(),
+#                 "updated_at": role.updated_at.isoformat()
+#             }
+#         }
+#     except Role.DoesNotExist:
+#             return {
+#             "status": "error",
+#             "message": "Role not found"
+#         }
+#     except Exception as e:
+#             return {
+#             "status": "error",
+#             "message": f"Failed to update role: {str(e)}"
+#         }
 
 @app.delete("/api/roles/{role_id}/", tags=["Role Management"])
 async def delete_role(role_id: int):
