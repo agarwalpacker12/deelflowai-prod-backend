@@ -164,6 +164,7 @@ app.add_middleware(
         "http://apps.deelflowai.com/register",
         "https://apps.deelflowai.com/login",
         "https://apps.deelflowai.com",
+        "https://www.deelflowai.com",
         
          # Keep old port for compatibility
     ],
