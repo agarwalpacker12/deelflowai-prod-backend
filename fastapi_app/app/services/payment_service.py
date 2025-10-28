@@ -11,9 +11,9 @@ from datetime import datetime, timedelta
 import logging
 
 # Configure Stripe
-#os.environ.setdefault('STRIPE_SECRET_KEY', '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')
-stripe.api_key = "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"
-#os.getenv('STRIPE_SECRET_KEY', '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')
+#os.environ.setdefault('STRIPE_SECRET_KEY', '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')
+stripe.api_key = "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"
+#os.getenv('STRIPE_SECRET_KEY', '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')
 
 
 logger = logging.getLogger(__name__)

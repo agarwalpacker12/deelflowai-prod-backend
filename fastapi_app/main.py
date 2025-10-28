@@ -152,17 +152,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",  # Vite default port
-        "http://localhost:5175",
         "http://localhost:3000",
         "http://127.0.0.1:5173",  # Vite default port
-        "http://127.0.0.1:5175",
         "http://127.0.0.1:3000",
         "http://dev.deelflowai.com:8140",
         "http://dev.deelflowai.com:8000",
-        "http://dev.deelflowai.com/register",
-        "https://dev.deelflowai.com/login",        
-        "http://apps.deelflowai.com/register",
-        "https://apps.deelflowai.com/login",
         "https://apps.deelflowai.com",
         "https://www.deelflowai.com",
         
