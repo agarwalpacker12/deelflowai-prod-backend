@@ -580,3 +580,60 @@ class Subscription(models.Model):
 
     def __str__(self):
         return f"{self.user.email} - {self.package.name} ({self.status})"
+
+
+# Payment Transaction Model (Track all payment transactions)
+class PaymentTransaction(models.Model):
+    """
+    Track all payment transactions across different payment gateways
+    """
+    PAYMENT_GATEWAY_CHOICES = [
+        ('stripe', 'Stripe'),
+        ('paytm', 'Paytm'),
+        ('razorpay', 'Razorpay'),
+        ('paypal', 'PayPal'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('refunded', 'Refunded'),
+    ]
+    
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payment_transactions')
+    plan_id = models.CharField(max_length=255, blank=True, null=True)
+    plan_name = models.CharField(max_length=255, blank=True, null=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=3, default='USD')
+    
+    payment_gateway = models.CharField(max_length=50, choices=PAYMENT_GATEWAY_CHOICES, default='stripe')
+    transaction_id = models.CharField(max_length=255, unique=True)
+    payment_intent_id = models.CharField(max_length=255, blank=True, null=True)
+    
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='pending')
+    description = models.TextField(blank=True, null=True)
+    
+    # Additional metadata
+    metadata = models.JSONField(default=dict, blank=True)
+    
+    # Transaction details
+    receipt_url = models.URLField(blank=True, null=True)
+    payment_method = models.CharField(max_length=100, blank=True, null=True)
+    
+    # Tracking
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['status']),
+            models.Index(fields=['transaction_id']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.email} - {self.amount} {self.currency} ({self.status}) via {self.payment_gateway}"

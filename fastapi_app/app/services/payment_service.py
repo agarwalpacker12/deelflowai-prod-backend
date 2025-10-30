@@ -9,11 +9,22 @@ from typing import Dict, List, Optional, Any
 from decimal import Decimal
 from datetime import datetime, timedelta
 import logging
+from dotenv import load_dotenv
+from pathlib import Path
 
-# Configure Stripe
-#os.environ.setdefault('STRIPE_SECRET_KEY', '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')
-stripe.api_key = "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"
-#os.getenv('STRIPE_SECRET_KEY', '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')
+# Load environment variables
+env_path = Path(__file__).parent.parent.parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path, override=True)  # Force override to ensure latest values
+    print(f"🔑 PaymentService: Loading .env from {env_path}")
+
+# Configure Stripe - load directly from .env
+stripe_secret_key = os.getenv('STRIPE_SECRET_KEY', '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')
+if stripe_secret_key and stripe_secret_key != 'sk_test_your_key_here':
+    stripe.api_key = stripe_secret_key
+    print(f"🔑 PaymentService: Stripe API key set at module level: {stripe_secret_key[:20]}...")
+else:
+    print(f"⚠️  PaymentService: Stripe API key not found or invalid: {stripe_secret_key[:30] if stripe_secret_key else 'None'}...")
 
 
 logger = logging.getLogger(__name__)
@@ -24,6 +35,22 @@ class PaymentService:
     def __init__(self):
         self.stripe = stripe
         self.webhook_secret = os.getenv('STRIPE_WEBHOOK_SECRET', 'whsec_your_webhook_secret_here')
+        
+        # Set Stripe API key dynamically from environment (double-check)
+        api_key = os.getenv('STRIPE_SECRET_KEY', '')
+        if api_key and api_key != 'sk_test_your_key_here':
+            stripe.api_key = api_key
+            print(f"🔑 PaymentService: Stripe API key configured in __init__: {api_key[:20]}...")
+        else:
+            print(f"⚠️  PaymentService: Invalid or missing Stripe API key in __init__: {api_key[:30] if api_key else 'None'}...")
+            # Try loading from .env again
+            env_path = Path(__file__).parent.parent.parent.parent / ".env"
+            if env_path.exists():
+                load_dotenv(env_path, override=True)
+                api_key = os.getenv('STRIPE_SECRET_KEY', '')
+                if api_key and api_key != 'sk_test_your_key_here':
+                    stripe.api_key = api_key
+                    print(f"🔑 PaymentService: Stripe API key reloaded: {api_key[:20]}...")
     
     async def create_payment_intent(self, amount: Decimal, currency: str = "usd", 
                                   metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -120,7 +147,92 @@ class PaymentService:
     async def get_subscription_packages(self) -> Dict[str, Any]:
         """Get available subscription packages"""
         try:
-            print("🔑 Stripe API key in use:", os.getenv("STRIPE_SECRET_KEY"))
+            # Find .env file - try multiple possible locations
+            possible_paths = [
+                Path(__file__).parent.parent.parent.parent / ".env",  # From payment_service.py: ../../../../.env
+                Path(__file__).parent.parent.parent.parent.parent / ".env",  # One level up (if in subdirectory)
+                Path.cwd() / ".env",  # Current working directory
+                Path.cwd().parent / ".env",  # Parent of current directory
+            ]
+            
+            env_path = None
+            for path in possible_paths:
+                absolute_path = path.resolve()
+                print(f"🔍 Checking for .env at: {absolute_path}")
+                if absolute_path.exists():
+                    env_path = absolute_path
+                    print(f"✅ Found .env file at: {absolute_path}")
+                    break
+            
+            if env_path and env_path.exists():
+                print(f"🔑 Loading .env from: {env_path}")
+                load_dotenv(env_path, override=True)
+            
+            # Get key directly from .env, not from os.environ (which might have defaults)
+            stripe_key = os.getenv("STRIPE_SECRET_KEY", "")
+            
+            # If key is still placeholder or empty, try reading .env directly
+            if (not stripe_key or stripe_key == 'sk_test_your_key_here' or 'test' in stripe_key.lower()) and env_path:
+                # Read .env file directly
+                try:
+                    if env_path.exists():
+                        with open(env_path, 'r') as f:
+                            for line in f:
+                                if line.startswith('STRIPE_SECRET_KEY='):
+                                    stripe_key = line.split('=', 1)[1].strip()
+                                    break
+                except Exception as e:
+                    print(f"⚠️  Error reading .env file in first attempt: {e}")
+                    pass
+            
+            # CRITICAL: Ensure we have a valid Stripe key before making API calls
+            if not stripe_key or not stripe_key.startswith('sk_live_'):
+                # Final fallback - read .env file directly line by line
+                print(f"⚠️  Key not found via env var, reading .env directly from: {env_path if env_path else 'NOT FOUND'}...")
+                if env_path and env_path.exists():
+                    try:
+                        with open(env_path, 'r', encoding='utf-8') as f:
+                            lines = f.readlines()
+                            print(f"📄 Reading .env file ({len(lines)} lines)...")
+                            for line_num, line in enumerate(lines, 1):
+                                line = line.strip()
+                                # Skip comments and empty lines
+                                if not line or line.startswith('#'):
+                                    continue
+                                if line.startswith('STRIPE_SECRET_KEY='):
+                                    raw_key = line.split('=', 1)[1].strip().strip('"').strip("'")
+                                    print(f"🔑 Found STRIPE_SECRET_KEY on line {line_num}: {raw_key[:30]}...")
+                                    if raw_key.startswith('sk_live_'):
+                                        stripe_key = raw_key
+                                        print(f"✅ Valid live key found in .env: {stripe_key[:30]}...")
+                                        break
+                                    else:
+                                        print(f"⚠️  Key on line {line_num} doesn't start with 'sk_live_': {raw_key[:7]}...")
+                    except Exception as e:
+                        print(f"❌ Error reading .env file: {e}")
+                        import traceback
+                        traceback.print_exc()
+                else:
+                    print(f"❌ .env file not found at any expected location!")
+            
+            # Set the key if we found a valid one
+            if stripe_key and stripe_key.startswith('sk_live_'):
+                stripe.api_key = stripe_key
+                self.stripe.api_key = stripe_key  # Also set on instance
+                print(f"🔑 Stripe API key SET: {stripe_key[:30]}...")
+                print(f"🔑 Key length: {len(stripe_key)} characters")
+                print(f"🔑 Key preview: {stripe_key[:50]}...{stripe_key[-10:]}")
+            else:
+                print(f"❌ CRITICAL: No valid Stripe key found!")
+                print(f"   Checked env_path: {env_path}")
+                print(f"   File exists: {env_path.exists() if env_path else 'N/A (path is None)'}")
+                print(f"   stripe_key value: {stripe_key[:50] if stripe_key else 'None'}...")
+                print(f"   Current stripe.api_key: {stripe.api_key[:30] if stripe.api_key else 'NOT SET'}...")
+                raise ValueError("Stripe API key not configured. Please set STRIPE_SECRET_KEY in .env file.")
+            
+            # Verify key is set before API call
+            if not stripe.api_key or not stripe.api_key.startswith('sk_live_'):
+                raise ValueError(f"Stripe API key not properly set. Current value: {stripe.api_key[:30] if stripe.api_key else 'None'}")
 
             # Get products and prices from Stripe
             products = self.stripe.Product.list(active=True, limit=10)

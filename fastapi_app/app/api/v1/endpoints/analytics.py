@@ -4,7 +4,7 @@ Analytics and metrics endpoints
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional, Dict, Any
-from app.core.security import get_current_user, require_permission
+from app.core.auth_middleware import get_current_user, require_permission
 from app.core.exceptions import NotFoundError, AuthorizationError
 from app.services.analytics_service import AnalyticsService
 from app.schemas.analytics import DashboardMetrics, BusinessMetrics, AIAnalytics

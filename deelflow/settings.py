@@ -24,9 +24,13 @@ from re import template
 
 # Set environment variables directly for now
 import os
-os.environ.setdefault('STRIPE_PUBLISHABLE_KEY', 'pk_test_your_key_here')
-os.environ.setdefault('STRIPE_SECRET_KEY', 'sk_test_your_key_here')
-os.environ.setdefault('STRIPE_WEBHOOK_SECRET', 'whsec_your_webhook_secret')
+# Don't override environment variables if they're already set
+if 'STRIPE_PUBLISHABLE_KEY' not in os.environ:
+    os.environ.setdefault('STRIPE_PUBLISHABLE_KEY', 'pk_test_your_key_here')
+if 'STRIPE_SECRET_KEY' not in os.environ:
+    os.environ.setdefault('STRIPE_SECRET_KEY', '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')
+if 'STRIPE_WEBHOOK_SECRET' not in os.environ:
+    os.environ.setdefault('STRIPE_WEBHOOK_SECRET', 'whsec_your_webhook_secret')
 os.environ.setdefault('FRONTEND_URL', 'http://localhost:3000')
 os.environ.setdefault('BACKEND_URL', 'http://localhost:8000')
 
@@ -108,13 +112,11 @@ DATABASES = {
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
-    "http://api.deelflowai.com",
     "http://dev.deelflowai.com:8000",
     "http://127.0.0.1:5173",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "http://api.deelflowai.com",
     "http://dev.deelflowai.com:8000",
     "http://127.0.0.1:5173",
 ]

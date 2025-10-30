@@ -3,7 +3,7 @@ Authentication-related Pydantic schemas
 """
 
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, Dict, Any
 from app.schemas.user import UserResponse
 
 class Token(BaseModel):
@@ -28,6 +28,7 @@ class RegisterRequest(BaseModel):
     first_name: str
     last_name: str
     organization_id: Optional[int] = None
+    organization: Optional[Dict[str, Any]] = None
 
 class RegisterRequestV2(BaseModel):
     """Registration request model v2"""

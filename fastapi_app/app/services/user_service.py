@@ -3,7 +3,10 @@ User service for business logic
 """
 
 from typing import List, Optional
-from app.core.security import get_password_hash, verify_password
+from app.core.security import get_password_hash, check_password
+
+# Alias for compatibility
+verify_password = check_password
 from app.schemas.user import UserCreate, UserUpdate
 from app.core.exceptions import NotFoundError, ValidationError
 from asgiref.sync import sync_to_async

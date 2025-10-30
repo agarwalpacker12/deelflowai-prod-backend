@@ -4,11 +4,15 @@ Authentication endpoints
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from app.core.security import create_access_token, create_refresh_token, verify_password, get_password_hash
+from app.core.security import create_access_token, create_refresh_token, check_password, get_password_hash
 from app.core.exceptions import AuthenticationError, ValidationError
-from app.schemas.auth import Token, LoginRequest, RegisterRequest, UserResponse
+from app.schemas.auth import Token, LoginRequest, RegisterRequest
+from app.schemas.user import UserResponse
 from app.services.user_service import UserService
 import logging
+
+# Alias for compatibility
+verify_password = check_password
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

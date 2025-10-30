@@ -4,7 +4,7 @@ User management endpoints
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional
-from app.core.security import get_current_user, require_permission
+from app.core.auth_middleware import get_current_user, require_permission
 from app.core.exceptions import NotFoundError, AuthorizationError
 from app.services.user_service import UserService
 from app.schemas.user import UserResponse, UserCreate, UserUpdate, UserListResponse

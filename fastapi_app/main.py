@@ -3,21 +3,35 @@ DeelFlowAI FastAPI Application - Final Clean Version
 Completely organized with proper Swagger grouping and frontend compatibility
 """
 
-from fastapi import FastAPI, HTTPException, Request, Query
+from fastapi import FastAPI, HTTPException, Request, Query, Depends, Header, status, UploadFile, File, Body, Request as FastAPIRequest, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.requests import Request
 from fastapi.params import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Dict, Any
 import os
 import sys
 import django
 import datetime
+import logging
 from pathlib import Path
 from asgiref.sync import sync_to_async
 from django.utils import timezone
 import ast
+
+logger = logging.getLogger(__name__)
+
+# Load environment variables BEFORE Django setup
+from dotenv import load_dotenv
+env_path = Path(__file__).parent.parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+
+# Import authentication dependencies
+from app.core.auth_middleware import get_current_user
 
 # Import schemas from their respective files
 from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse, CampaignListResponse
@@ -27,7 +41,7 @@ from app.schemas.lead import LeadResponse, LeadCreateRequest, LeadUpdateRequest,
 from app.schemas.deal import DealResponse, DealCreateRequest, DealUpdateRequest, DealCreate, DealUpdate
 from app.schemas.milestone import MilestoneCreate, MilestoneUpdate, MilestoneResponse, MilestoneCreateRequest, MilestoneUpdateRequest
 from app.schemas.property_save import PropertySaveCreate, PropertySaveUpdate, PropertySaveResponse, PropertySaveListResponse
-from app.schemas.payment import PaymentIntentCreate, PaymentConfirm, PaymentIntentResponse, PaymentResponse, SubscriptionResponse
+from app.schemas.payment import PaymentIntentCreate, PaymentConfirm, PaymentIntentResponse, PaymentResponse, SubscriptionResponse, CheckoutSessionCreate
 from app.schemas.auth import RegisterRequest, RegisterRequestV2
 from app.schemas.role import RoleCreate, RoleUpdate, RoleResponse
 
@@ -142,6 +156,26 @@ tags_metadata = [
         "name": "Payments",
         "description": "Payment processing, subscription management, and billing endpoints using Stripe integration.",
     },
+    {
+        "name": "Role Management",
+        "description": "Role-based access control (RBAC) endpoints for managing roles, permissions, and user-role assignments.",
+    },
+    {
+        "name": "Permissions",
+        "description": "Permission management endpoints for granular access control.",
+    },
+    {
+        "name": "ATTOM API",
+        "description": "Property data integration with ATTOM Data Solutions API.",
+    },
+    {
+        "name": "SignNow",
+        "description": "Electronic signature integration with SignNow API.",
+    },
+    {
+        "name": "Blockchain",
+        "description": "Polygon (MATIC) blockchain endpoints.",
+    }
 ]
 
 # Update the app with tags metadata
@@ -159,8 +193,6 @@ app.add_middleware(
         "http://dev.deelflowai.com:8000",
         "https://apps.deelflowai.com",
         "https://www.deelflowai.com",
-        
-         # Keep old port for compatibility
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
@@ -1734,6 +1766,534 @@ async def delete_property_save(property_save_id: int):
             "message": f"Failed to delete property save: {str(e)}"
         }
 
+# ==================== ATTOM API INTEGRATION ENDPOINTS ====================
+
+@app.get("/api/properties/attom/search/", tags=["Properties"])
+async def search_attom_properties(
+    address: Optional[str] = None,
+    city: Optional[str] = None,
+    state: Optional[str] = None,
+    zipcode: Optional[str] = None,
+    property_type: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    min_sqft: Optional[int] = None,
+    max_sqft: Optional[int] = None,
+    bedrooms: Optional[int] = None,
+    bathrooms: Optional[float] = None,
+    limit: int = 50,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+    radius: Optional[int] = None
+):
+    """
+    **Search Properties from ATTOM API**
+    
+    Searches for properties using ATTOM Data Solutions API with comprehensive filtering options.
+    
+    **Query Parameters:**
+    - address: Property address
+    - city: City name
+    - state: State code (e.g., "FL", "CA")
+    - zip: ZIP code
+    - property_type: Type of property (single_family, multi_family, etc.)
+    - min_price: Minimum price filter
+    - max_price: Maximum price filter
+    - min_sqft: Minimum square footage
+    - max_sqft: Maximum square footage
+    - bedrooms: Number of bedrooms
+    - bathrooms: Number of bathrooms
+    - limit: Maximum number of results (default: 50)
+    
+    **Returns:**
+    - List of properties from ATTOM API
+    - Normalized property data matching internal structure
+    - Additional owner and market data
+    """
+    try:
+        from app.services.attom_service import attom_service
+        
+        result = attom_service.search_properties(
+            address=address,
+            city=city,
+            state=state,
+            zipcode=zipcode,
+            property_type=property_type,
+            min_price=min_price,
+            max_price=max_price,
+            min_sqft=min_sqft,
+            max_sqft=max_sqft,
+            bedrooms=bedrooms,
+            bathrooms=bathrooms,
+            limit=limit,
+            latitude=latitude,
+            longitude=longitude,
+            radius=radius
+        )
+        
+        return result
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to search ATTOM properties: {str(e)}",
+            "data": []
+        }
+
+# Aliased consolidated endpoints under property list namespace
+@app.get("/api/properties/search", tags=["Properties"], summary="Search Properties (ATTOM)")
+async def properties_search(
+    address: Optional[str] = None,
+    city: Optional[str] = None,
+    state: Optional[str] = None,
+    zipcode: Optional[str] = None,
+    property_type: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    min_sqft: Optional[int] = None,
+    max_sqft: Optional[int] = None,
+    bedrooms: Optional[int] = None,
+    bathrooms: Optional[float] = None,
+    limit: int = 50,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+    radius: Optional[int] = None
+):
+    """
+    Search properties via ATTOM, exposed under the consolidated properties namespace.
+    """
+    try:
+        from app.services.attom_service import attom_service
+        return attom_service.search_properties(
+            address=address,
+            city=city,
+            state=state,
+            zipcode=zipcode,
+            property_type=property_type,
+            min_price=min_price,
+            max_price=max_price,
+            min_sqft=min_sqft,
+            max_sqft=max_sqft,
+            bedrooms=bedrooms,
+            bathrooms=bathrooms,
+            limit=limit,
+            latitude=latitude,
+            longitude=longitude,
+            radius=radius
+        )
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to search properties: {str(e)}",
+            "data": []
+        }
+
+@app.get("/api/properties/attom/details/{property_id}/", tags=["Properties"])
+async def get_attom_property_details(property_id: str):
+    """
+    **Get Property Details from ATTOM API**
+    
+    Retrieves detailed property information from ATTOM API by property identifier.
+    
+    **Parameters:**
+    - **property_id** (str): ATTOM property identifier
+    
+    **Returns:**
+    - Detailed property data including assessments, ownership, and valuations
+    """
+    try:
+        from app.services.attom_service import attom_service
+        
+        result = attom_service.get_property_details(property_id)
+        return result
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to fetch property details: {str(e)}"
+        }
+
+@app.get("/api/properties/details/{property_id}", tags=["Properties"], summary="Get Property Details (ATTOM)")
+async def properties_details(property_id: str):
+    """
+    Get property details via ATTOM, exposed under the consolidated properties namespace.
+    """
+    try:
+        from app.services.attom_service import attom_service
+        return attom_service.get_property_details(property_id)
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to fetch property details: {str(e)}"
+        }
+
+# ==================== COMBINED PROPERTY LIST (Internal + ATTOM) ====================
+
+@app.get(
+    "/api/properties/combined",
+    tags=["Properties"],
+    summary="Combined Property List (Internal + ATTOM)"
+)
+async def get_combined_properties(
+    page: int = Query(1, ge=1, description="Page number (default 1)"),
+    limit: int = Query(20, ge=1, le=100, description="Items per page (default 20, max 100)"),
+    search: Optional[str] = Query(None, description="Free-text search over address/city/state (internal only)"),
+    property_type: Optional[str] = Query(None, description="Filter by property type"),
+    min_price: Optional[float] = Query(None, description="Minimum price filter (internal)"),
+    max_price: Optional[float] = Query(None, description="Maximum price filter (internal)"),
+    zipcode: Optional[str] = Query(None, description="ATTOM location filter (recommended)"),
+    city: Optional[str] = Query(None, description="ATTOM city filter"),
+    state: Optional[str] = Query(None, description="ATTOM state filter"),
+    latitude: Optional[float] = Query(None, description="Latitude for radius search (ATTOM)"),
+    longitude: Optional[float] = Query(None, description="Longitude for radius search (ATTOM)"),
+    radius: Optional[int] = Query(None, description="Radius in miles for location-based search (ATTOM)"),
+    include_raw: bool = Query(True, description="Include raw source payloads under raw.attom/raw.internal")
+):
+    """
+    Unified property list that merges internal properties with ATTOM search results.
+
+    Query Parameters:
+    - page (int): page number (default 1)
+    - limit (int): items per page (default 20, max 100)
+    - search (str): free-text search over address/city/state (internal only)
+    - property_type (str): filter by property type
+    - min_price/max_price (number): internal price filters
+    - zipcode (str): ATTOM location filter (recommended)
+    - city/state (str): ATTOM filters; ATTOM typically requires zipcode or lat/long
+    - latitude/longitude (number), radius (int): ATTOM radius search
+    - include_raw (bool): include raw source payloads under `raw.attom`/`raw.internal`
+
+    Returns:
+    - status: "success" or "error"
+    - data: { properties, total, page, limit, has_next, has_prev }
+      - properties: list of unified items with normalized top-level fields and optional `raw`
+
+    Notes:
+    - Deduplicates by canonical address (street+city+state+zip), preferring internal rows and merging ATTOM raw data.
+    - If ATTOM returns a location input error, internal results are still returned.
+    """
+    try:
+        from typing import Dict, Any
+        from datetime import datetime, timezone
+        from app.services.attom_service import attom_service
+        from django.db.models import Q
+        from asgiref.sync import sync_to_async
+        from deelflow.models import Property
+
+        def normalize_internal(p: Any) -> Dict[str, Any]:
+            return {
+                "id": f"src:internal:{p.id}",
+                "source": "internal",
+                "source_id": str(p.id),
+                "attribution": "Internal",
+                "street_address": getattr(p, "address", "") or "",
+                "unit_apt": getattr(p, "unit_apt", "") or "",
+                "city": getattr(p, "city", "") or "",
+                "state": getattr(p, "state", "") or "",
+                "zip_code": getattr(p, "zipcode", "") or "",
+                "county": getattr(p, "county", "") or "",
+                "property_type": getattr(p, "property_type", "") or "",
+                "bedrooms": p.bedrooms if getattr(p, "bedrooms", None) is not None else None,
+                "bathrooms": p.bathrooms if getattr(p, "bathrooms", None) is not None else None,
+                "square_feet": p.square_feet if getattr(p, "square_feet", None) is not None else None,
+                "lot_size": p.lot_size if getattr(p, "lot_size", None) is not None else None,
+                "year_built": p.year_built if getattr(p, "year_built", None) is not None else None,
+                "purchase_price": p.price if getattr(p, "price", None) is not None else None,
+                "arv": p.arv if getattr(p, "arv", None) is not None else None,
+                "repair_estimate": p.repair_estimate if getattr(p, "repair_estimate", None) is not None else None,
+                "holding_costs": p.holding_costs if getattr(p, "holding_costs", None) is not None else None,
+                "transaction_type": getattr(p, "transaction_type", None),
+                "assignment_fee": p.assignment_fee if getattr(p, "assignment_fee", None) is not None else None,
+                "description": getattr(p, "description", "") or "",
+                "seller_notes": getattr(p, "seller_notes", "") or "",
+                "images": [],
+                "status": getattr(p, "status", "available") or "available",
+                "created_at": getattr(p, "created_at", datetime.now(timezone.utc)).isoformat(),
+                "updated_at": getattr(p, "updated_at", datetime.now(timezone.utc)).isoformat(),
+                "raw": {"internal": {
+                    "id": p.id,
+                    "address": getattr(p, "address", None),
+                    "unit_apt": getattr(p, "unit_apt", None),
+                    "city": getattr(p, "city", None),
+                    "state": getattr(p, "state", None),
+                    "zipcode": getattr(p, "zipcode", None),
+                    "county": getattr(p, "county", None),
+                    "property_type": getattr(p, "property_type", None),
+                    "bedrooms": getattr(p, "bedrooms", None),
+                    "bathrooms": getattr(p, "bathrooms", None),
+                    "square_feet": getattr(p, "square_feet", None),
+                    "lot_size": getattr(p, "lot_size", None),
+                    "year_built": getattr(p, "year_built", None),
+                    "price": getattr(p, "price", None),
+                    "arv": getattr(p, "arv", None),
+                    "repair_estimate": getattr(p, "repair_estimate", None),
+                    "holding_costs": getattr(p, "holding_costs", None),
+                    "transaction_type": getattr(p, "transaction_type", None),
+                    "assignment_fee": getattr(p, "assignment_fee", None),
+                    "description": getattr(p, "description", None),
+                    "seller_notes": getattr(p, "seller_notes", None),
+                    "status": getattr(p, "status", None),
+                }}
+            }
+
+        def normalize_attom(item: Dict[str, Any]) -> Dict[str, Any]:
+            # Expect our attom_service to already return normalized basic fields; still guard with .get
+            now_iso = datetime.now(timezone.utc).isoformat()
+            return {
+                "id": f"src:attom:{item.get('id')}",
+                "source": "attom",
+                "source_id": str(item.get("id")),
+                "attribution": "ATTOM Data Solutions",
+                "street_address": item.get("street_address") or "",
+                "unit_apt": item.get("unit_apt") or "",
+                "city": item.get("city") or "",
+                "state": item.get("state") or "",
+                "zip_code": item.get("zip_code") or "",
+                "county": item.get("county") or "",
+                "property_type": item.get("property_type") or "",
+                "bedrooms": item.get("bedrooms", None),
+                "bathrooms": item.get("bathrooms", None),
+                "square_feet": item.get("square_feet", None),
+                "lot_size": item.get("lot_size", None),
+                "year_built": item.get("year_built", None) or None,
+                # Internal-only finance fields default to None for ATTOM rows
+                "purchase_price": None,
+                "arv": None,
+                "repair_estimate": None,
+                "holding_costs": None,
+                "transaction_type": None,
+                "assignment_fee": None,
+                "description": item.get("property_description", "") or "",
+                "seller_notes": item.get("seller_notes", "") or "",
+                "images": item.get("images", []) or [],
+                "status": item.get("status", "available") or "available",
+                "created_at": item.get("created_at") or now_iso,
+                "updated_at": item.get("updated_at") or now_iso,
+                "raw": {"attom": item}
+            }
+
+        # 1) Internal DB fetch with filters (basic search on address/city/state)
+        async def fetch_internal() -> Any:
+            qs = Property.objects.all()
+            if search:
+                qs = qs.filter(
+                    Q(address__icontains=search) |
+                    Q(city__icontains=search) |
+                    Q(state__icontains=search)
+                )
+            if property_type:
+                qs = qs.filter(property_type__iexact=property_type)
+            if min_price is not None:
+                qs = qs.filter(price__gte=min_price)
+            if max_price is not None:
+                qs = qs.filter(price__lte=max_price)
+            return await sync_to_async(list)(qs[:1000])  # cap to reasonable size pre-merge
+
+        # 2) ATTOM fetch (location-based; require zipcode OR coordinates to avoid 400)
+        def fetch_attom() -> Dict[str, Any]:
+            return attom_service.search_properties(
+                address=None, city=city, state=state, zipcode=zipcode,
+                property_type=property_type, min_price=min_price, max_price=max_price,
+                min_sqft=None, max_sqft=None, bedrooms=None, bathrooms=None,
+                limit=50, latitude=latitude, longitude=longitude, radius=radius
+            )
+
+        internal_list, attom_result = await sync_to_async(lambda: None)(), None
+        # fetch internal (await) and attom (sync) sequentially to keep simple and safe
+        internal_list = await fetch_internal()
+        attom_result = fetch_attom()
+
+        # Normalize internal
+        unified: list = [normalize_internal(p) for p in internal_list]
+
+        # Normalize ATTOM if success
+        if isinstance(attom_result, dict) and attom_result.get("status") == "success":
+            # attom_service returns either list under data or direct list; handle both
+            attom_data = attom_result.get("data")
+            attom_list = []
+            if isinstance(attom_data, list):
+                attom_list = attom_data
+            elif isinstance(attom_data, dict):
+                # common: { properties: [...] }
+                for key in ("properties", "results", "items"):
+                    if isinstance(attom_data.get(key), list):
+                        attom_list = attom_data.get(key)
+                        break
+            for item in attom_list:
+                if isinstance(item, dict):
+                    unified.append(normalize_attom(item))
+        else:
+            # If ATTOM fails due to missing location input, continue with internal only
+            pass
+
+        # Optional dedup by canonical address key; prefer internal
+        def address_key(row: Dict[str, Any]) -> str:
+            return "|".join([
+                (row.get("street_address") or "").strip().upper(),
+                (row.get("city") or "").strip().upper(),
+                (row.get("state") or "").strip().upper(),
+                (row.get("zip_code") or "").strip().upper(),
+            ])
+
+        seen = {}
+        deduped = []
+        for row in unified:
+            key = address_key(row)
+            if not key:
+                deduped.append(row)
+                continue
+            if key not in seen:
+                seen[key] = row
+                deduped.append(row)
+            else:
+                # merge raw data if duplicate (keep internal-preferred already ordered)
+                existing = seen[key]
+                if row.get("source") == "attom":
+                    raw = existing.setdefault("raw", {})
+                    raw["attom"] = row.get("raw", {}).get("attom")
+                else:
+                    raw = existing.setdefault("raw", {})
+                    raw["internal_duplicate"] = row.get("raw", {}).get("internal")
+
+        # Sort stable: internal first, then ATTOM; then by city/street
+        deduped.sort(key=lambda r: (
+            0 if r.get("source") == "internal" else 1,
+            (r.get("city") or ""),
+            (r.get("street_address") or "")
+        ))
+
+        # Pagination after merge
+        total = len(deduped)
+        page = max(1, page)
+        limit = max(1, min(100, limit))
+        start = (page - 1) * limit
+        end = start + limit
+        page_items = deduped[start:end]
+
+        if not include_raw:
+            for row in page_items:
+                row.pop("raw", None)
+
+        return {
+            "status": "success",
+            "data": {
+                "properties": page_items,
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "has_next": end < total,
+                "has_prev": start > 0
+            }
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to get combined properties: {str(e)}"
+        }
+
+# ==================== USER LIST (for Role Management) ====================
+
+@app.get(
+    "/api/users/",
+    tags=["Role Management"],
+    summary="List registered users for role assignment"
+)
+async def list_users(
+    page: int = Query(1, ge=1, description="Page number (default 1)"),
+    limit: int = Query(20, ge=1, le=100, description="Items per page (default 20, max 100)"),
+    search: Optional[str] = Query(None, description="Filter by email, first name, or last name (icontains)"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status (true/false)")
+):
+    """
+    Returns a paginated list of registered users to support role assignment workflows.
+
+    Query Parameters:
+    - page (int): page number (default 1)
+    - limit (int): items per page (default 20, max 100)
+    - search (str): filter by email, first name, or last name (icontains)
+    - is_active (bool): optional filter by active status
+
+    Response items include minimal fields needed for role assignment.
+    """
+    try:
+        from deelflow.models import User
+        from django.db.models import Q
+        from asgiref.sync import sync_to_async
+
+        qs = User.objects.all().order_by("-id")
+        if search:
+            qs = qs.filter(
+                Q(email__icontains=search) |
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search)
+            )
+        if is_active is not None:
+            qs = qs.filter(is_active=is_active)
+
+        # Pagination
+        page = max(1, page)
+        limit = max(1, min(100, limit))
+        total = await sync_to_async(qs.count)()
+        start = (page - 1) * limit
+        end = start + limit
+        users = await sync_to_async(list)(qs[start:end])
+
+        def serialize(u):
+            return {
+                "id": u.id,
+                "email": u.email,
+                "first_name": getattr(u, "first_name", "") or "",
+                "last_name": getattr(u, "last_name", "") or "",
+                "role": getattr(u, "role", "user") or "user",
+                "is_active": getattr(u, "is_active", True),
+                "is_verified": getattr(u, "is_verified", False),
+                "organization_id": getattr(u, "organization_id", None),
+            }
+
+        items = [serialize(u) for u in users]
+        return {
+            "status": "success",
+            "data": {
+                "users": items,
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "has_next": end < total,
+                "has_prev": start > 0
+            }
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to list users: {str(e)}"
+        }
+
+@app.get("/api/properties/attom/market-trends/", tags=["Properties"])
+async def get_attom_market_trends(city: str, state: str):
+    """
+    **Get Market Trends from ATTOM API**
+    
+    Retrieves market trend data for a specific location from ATTOM API.
+    
+    **Query Parameters:**
+    - **city** (str): City name
+    - **state** (str): State code (e.g., "FL", "CA")
+    
+    **Returns:**
+    - Market trend data including price trends, inventory levels, and forecasts
+    """
+    try:
+        from app.services.attom_service import attom_service
+        
+        result = attom_service.get_market_trends(city, state)
+        return result
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to fetch market trends: {str(e)}"
+        }
+
 # ==================== CAMPAIGN ENDPOINTS (Frontend Compatible) ====================
 
 @app.get("/campaigns/", 
@@ -2560,9 +3120,21 @@ async def create_lead(lead_data: LeadCreate):
             "message": "Lead created successfully",
             "data": {
                 "id": lead.id,
-                "first_name": lead.first_name,
-                "last_name": lead.last_name,
+                "first_name": lead_data.first_name,
+                "last_name": lead_data.last_name,
                 "email": lead.email,
+                "phone": lead.phone,
+                "property_address": lead.address,
+                "property_city": lead.city,
+                "property_state": lead.state,
+                "property_zip": lead.zipcode,
+                "property_type": lead_data.property_type,
+                "source": lead.source,
+                "estimated_value": lead_data.estimated_value,
+                "mortgage_balance": lead_data.mortgage_balance,
+                "asking_price": lead_data.asking_price,
+                "preferred_contact_method": lead_data.preferred_contact_method,
+                "lead_type": lead_data.lead_type,
                 "status": lead.status,
                 "created_at": lead.created_at.isoformat(),
                 "updated_at": lead.updated_at.isoformat()
@@ -2581,26 +3153,35 @@ async def get_lead(lead_id: int):
         from deelflow.models import Lead
         
         lead = await sync_to_async(Lead.objects.get)(id=lead_id)
+        
+        # Split name into first_name and last_name
+        name_parts = lead.name.split(" ", 1) if lead.name else ["", ""]
+        first_name = name_parts[0] if len(name_parts) > 0 else ""
+        last_name = name_parts[1] if len(name_parts) > 1 else ""
+        
         return {
         "status": "success",
             "data": {
                 "id": lead.id,
-                "first_name": lead.first_name,
-                "last_name": lead.last_name,
+                "first_name": first_name,
+                "last_name": last_name,
                 "email": lead.email,
                 "phone": lead.phone,
-                "property_address": lead.property_address,
-                "property_city": lead.property_city,
-                "property_state": lead.property_state,
-                "property_zip": lead.property_zip,
-                "property_type": lead.property_type,
+                "property_address": lead.address,
+                "property_city": lead.city,
+                "property_state": lead.state,
+                "property_zip": lead.zipcode,
+                "property_type": "",  # Not stored in model
                 "source": lead.source,
-                "estimated_value": float(lead.estimated_value) if lead.estimated_value else None,
-                "mortgage_balance": float(lead.mortgage_balance) if lead.mortgage_balance else None,
-                "asking_price": float(lead.asking_price) if lead.asking_price else None,
-                "preferred_contact_method": lead.preferred_contact_method,
-                "lead_type": lead.lead_type,
+                "estimated_value": "",
+                "mortgage_balance": "",
+                "asking_price": "",
+                "preferred_contact_method": "",
+                "lead_type": "",
                 "status": lead.status,
+                "motivation_score": lead.motivation_score,
+                "notes": lead.notes,
+                "responded": lead.responded,
                 "created_at": lead.created_at.isoformat(),
                 "updated_at": lead.updated_at.isoformat()
             }
@@ -2623,20 +3204,56 @@ async def update_lead(lead_id: int, lead_data: LeadUpdate):
         from deelflow.models import Lead
         
         lead = await sync_to_async(Lead.objects.get)(id=lead_id)
+        update_data = lead_data.dict(exclude_unset=True)
         
-        # Update lead fields
-        for field, value in lead_data.dict(exclude_unset=True).items():
-            if hasattr(lead, field):
-                setattr(lead, field, value)
+        # Handle name field separately (combine first_name and last_name)
+        if 'first_name' in update_data or 'last_name' in update_data:
+            first_name = update_data.get('first_name', lead.name.split(' ')[0] if lead.name else '')
+            last_name = update_data.get('last_name', lead.name.split(' ')[1] if len(lead.name.split(' ')) > 1 else '')
+            lead.name = f"{first_name} {last_name}".strip()
+        
+        # Handle property address fields
+        if 'property_address' in update_data:
+            lead.address = update_data['property_address']
+        if 'property_city' in update_data:
+            lead.city = update_data['property_city']
+        if 'property_state' in update_data:
+            lead.state = update_data['property_state']
+        if 'property_zip' in update_data:
+            lead.zipcode = update_data['property_zip']
+        
+        # Handle other fields
+        field_mapping = {
+            'email': 'email',
+            'phone': 'phone',
+            'source': 'source',
+            'status': 'status'
+        }
+        
+        for frontend_field, backend_field in field_mapping.items():
+            if frontend_field in update_data:
+                setattr(lead, backend_field, update_data[frontend_field])
         
         await sync_to_async(lead.save)()
+        
+        # Return updated data
+        name_parts = lead.name.split(" ", 1) if lead.name else ["", ""]
+        first_name = name_parts[0] if len(name_parts) > 0 else ""
+        last_name = name_parts[1] if len(name_parts) > 1 else ""
+        
         return {
         "status": "success",
             "message": "Lead updated successfully",
         "data": {
                 "id": lead.id,
-                "first_name": lead.first_name,
-                "last_name": lead.last_name,
+                "first_name": first_name,
+                "last_name": last_name,
+                "email": lead.email,
+                "phone": lead.phone,
+                "property_address": lead.address,
+                "property_city": lead.city,
+                "property_state": lead.state,
+                "property_zip": lead.zipcode,
                 "status": lead.status,
                 "updated_at": lead.updated_at.isoformat()
             }
@@ -2729,33 +3346,71 @@ async def login(login_data: LoginRequest):
     - Token type (Bearer)
     - User information (id, email, name, role)
     - Authentication status
+    
+    **Error Responses:**
+    - 400: Invalid credentials (wrong password)
+    - 404: Email not registered (prompt to sign up)
     """
     try:
-        # Mock authentication (replace with actual authentication logic)
-        if login_data.email and login_data.password:
-                return {
-                "status": "success",
-                "data": {
-                    "tokens": {
-                        "access_token": "mock_jwt_token_12345",
-                        "token_type": "bearer"
-                    },
-                    "user": {
-                        "id": 1,
-                        "email": login_data.email,
-                        "first_name": "John",
-                        "last_name": "Doe",
-                        "role": "admin"
-                    }
-                }
-            }
-        else:
+        from deelflow.models import User
+        from app.core.security import check_password, create_access_token
+        from django.contrib.auth.hashers import check_password as django_check_password
+        
+        # Check if user exists
+        try:
+            user = await sync_to_async(User.objects.get)(email=login_data.email)
+        except User.DoesNotExist:
             return {
                 "status": "error",
-                "message": "Invalid credentials"
+                "message": "Email not registered. Please sign up first.",
+                "error_code": "EMAIL_NOT_FOUND"
             }
-    except Exception as e:
+        
+        # Verify password
+        if not django_check_password(login_data.password, user.password):
             return {
+                "status": "error",
+                "message": "Invalid email or password"
+            }
+        
+        # Check if user is active
+        if not user.is_active:
+            return {
+                "status": "error",
+                "message": "Account is inactive. Please contact support."
+            }
+        
+        # Generate JWT token
+        token_data = {
+            "user_id": user.id,
+            "email": user.email,
+            "role": user.role
+        }
+        access_token = create_access_token(data=token_data)
+        
+        return {
+            "status": "success",
+            "message": "Login successful",
+            "data": {
+                "tokens": {
+                    "access_token": access_token,
+                    "token_type": "bearer"
+                },
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "role": user.role,
+                    "is_verified": user.is_verified,
+                    "organization_id": user.organization_id if hasattr(user, 'organization_id') else None
+                }
+            }
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
             "status": "error",
             "message": f"Login failed: {str(e)}"
         }
@@ -2772,31 +3427,150 @@ async def register(register_data: RegisterRequest):
     - password: User's password
     - first_name: User's first name
     - last_name: User's last name
-    - role: User's role (optional)
+    - organization_id: Organization ID (optional, creates default if not provided)
     
     **Returns:**
     - Registration status
+    - JWT access token
     - User information
     - Success/error message
+    
+    **Error Responses:**
+    - 409: Email already registered
+    - 400: Missing required fields
     """
     try:
-        # Mock registration (replace with actual registration logic)
+        from deelflow.models import User, Organization
+        from app.core.security import hash_password, create_access_token
+        import uuid
+        
+        # Check if email already exists
+        existing_user = await sync_to_async(User.objects.filter)(email=register_data.email)
+        if await sync_to_async(existing_user.exists)():
+            return {
+                "status": "error",
+                "message": "Email already registered. Please sign in.",
+                "error_code": "EMAIL_EXISTS"
+            }
+        
+        # Get or create organization
+        organization_id = register_data.organization_id
+        org_payload = getattr(register_data, "organization", None) or {}
+
+        # Helper to slugify and ensure uniqueness
+        def slugify(value: str) -> str:
+            import re
+            value = (value or "").strip().lower()
+            value = re.sub(r"[^a-z0-9\-\s]", "", value)
+            value = re.sub(r"\s+", "-", value)
+            value = re.sub(r"-+", "-", value)
+            return value or "org"
+
+        async def generate_unique_slug(base_slug: str) -> str:
+            base = slugify(base_slug)
+            candidate = base
+            suffix = 1
+            while await sync_to_async(Organization.objects.filter(slug=candidate).exists)():
+                suffix += 1
+                candidate = f"{base}-{suffix}"
+            return candidate
+
+        if organization_id:
+            try:
+                organization = await sync_to_async(Organization.objects.get)(id=organization_id)
+            except Organization.DoesNotExist:
+                # Fall back to creating from payload or default
+                desired_name = org_payload.get("name") if isinstance(org_payload, dict) else None
+                desired_slug = org_payload.get("slug") if isinstance(org_payload, dict) else None
+                name = desired_name or f"{register_data.first_name}'s Organization"
+                slug_base = desired_slug or slugify(name) or f"{register_data.first_name.lower()}-org"
+                unique_slug = await generate_unique_slug(slug_base)
+                organization = await sync_to_async(Organization.objects.create)(
+                    name=name,
+                    slug=unique_slug,
+                    subscription_status=(org_payload.get("subscription_status") if isinstance(org_payload, dict) else "trial") or "trial",
+                )
+        else:
+            # Create organization from payload if provided, else default
+            desired_name = org_payload.get("name") if isinstance(org_payload, dict) else None
+            desired_slug = org_payload.get("slug") if isinstance(org_payload, dict) else None
+            name = desired_name or f"{register_data.first_name}'s Organization"
+            slug_base = desired_slug or slugify(name) or f"{register_data.first_name.lower()}-org"
+            # If slug exists, generate a unique one instead of failing
+            unique_slug = await generate_unique_slug(slug_base)
+            organization = await sync_to_async(Organization.objects.create)(
+                name=name,
+                slug=unique_slug,
+                subscription_status=(org_payload.get("subscription_status") if isinstance(org_payload, dict) else "trial") or "trial",
+            )
+        
+        # Hash password
+        hashed_password = hash_password(register_data.password)
+        
+        # Create user
+        user = await sync_to_async(User.objects.create)(
+            email=register_data.email,
+            first_name=register_data.first_name,
+            last_name=register_data.last_name,
+            password=hashed_password,
+            organization=organization,
+            role="user",
+            is_active=True,
+            is_verified=False
+        )
+        
+        # Generate JWT token
+        token_data = {
+            "user_id": user.id,
+            "email": user.email,
+            "role": user.role
+        }
+        access_token = create_access_token(data=token_data)
+        
         return {
-        "status": "success",
+            "status": "success",
             "message": "User registered successfully",
-        "data": {
-                "id": 1,
-                "email": register_data.email,
-                "first_name": register_data.first_name,
-                "last_name": register_data.last_name,
-                "role": "user"
+            "data": {
+                "tokens": {
+                    "access_token": access_token,
+                    "token_type": "bearer"
+                },
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "role": user.role,
+                    "is_verified": user.is_verified,
+                    "organization_id": organization.id
+                }
             }
         }
     except Exception as e:
-            return {
+        import traceback
+        traceback.print_exc()
+        return {
             "status": "error",
             "message": f"Registration failed: {str(e)}"
         }
+
+@app.post("/api/auth/logout", tags=["Authentication"])
+@app.post("/logout/", tags=["Authentication"])
+async def logout():
+    """
+    **User Logout**
+    
+    Logs out the current user. On the client side, this should clear the JWT token from localStorage.
+    
+    **Returns:**
+    - Success message
+    
+    **Note:** This is a client-side logout. The JWT token should be removed from the client's storage.
+    """
+    return {
+        "status": "success",
+        "message": "Logged out successfully"
+    }
 
 @app.get("/api/auth/me", tags=["Authentication"])
 async def get_current_user():
@@ -3276,6 +4050,485 @@ async def delete_role(role_id: int):
             "message": f"Failed to delete role: {str(e)}"
         }
 
+# ==================== USER-ROLE ASSIGNMENT ENDPOINTS ====================
+
+@app.post("/api/roles/{role_id}/assign-user/", 
+         tags=["Role Management"],
+         summary="Assign User to Role",
+         description="Assign a user to a specific role by providing either user_id or email",
+         response_description="User-role assignment status with user and role details",
+         responses={
+             200: {
+                 "description": "Successfully assigned user to role",
+                 "content": {
+                     "application/json": {
+                         "example": {
+                             "status": "success",
+                             "message": "User assigned to role successfully",
+                             "data": {
+                                 "user": {
+                                     "id": 1,
+                                     "email": "user@example.com",
+                                     "first_name": "John",
+                                     "last_name": "Doe"
+                                 },
+                                 "role": {
+                                     "id": 141,
+                                     "name": "admin",
+                                     "label": "Administrator"
+                                 }
+                             }
+                         }
+                     }
+                 }
+             },
+             400: {
+                 "description": "Bad request - missing user_id or email",
+                 "content": {
+                     "application/json": {
+                         "example": {
+                             "status": "error",
+                             "message": "Either user_id or email must be provided"
+                         }
+                     }
+                 }
+             },
+             404: {
+                 "description": "Not found - role or user not found",
+                 "content": {
+                     "application/json": {
+                         "example": {
+                             "status": "error",
+                             "message": "Role not found"
+                         }
+                     }
+                 }
+             }
+         })
+async def assign_user_to_role(role_id: int, user_data: dict):
+    """
+    **Assign User to Role**
+    
+    Assigns a user to a specific role. You can provide either `user_id` or `email` to identify the user.
+    
+    **Path Parameters:**
+    - **role_id** (int): The ID of the role to assign
+    
+    **Request Body:**
+    - **user_id** (int, optional): The ID of the user to assign
+    - **email** (str, optional): The email of the user to assign
+    
+    **Returns:**
+    - **status**: "success" or "error"
+    - **message**: Status message
+    - **data** (if success):
+      - **user**: User details (id, email, first_name, last_name)
+      - **role**: Role details (id, name, label)
+    
+    **Example Request:**
+    ```json
+    {
+        "user_id": 1
+    }
+    ```
+    OR
+    ```json
+    {
+        "email": "user@example.com"
+    }
+    ```
+    """
+    try:
+        from deelflow.models import Role, Organization
+        
+        # Get user_id or email from request
+        user_id = user_data.get("user_id")
+        email = user_data.get("email")
+        
+        if not user_id and not email:
+            return {
+                "status": "error",
+                "message": "Either user_id or email must be provided"
+            }
+        
+        # Get role
+        role = await sync_to_async(Role.objects.get)(id=role_id)
+        
+        # Find user by ID or email
+        from deelflow.models import User
+        if user_id:
+            user = await sync_to_async(User.objects.get)(id=user_id)
+        else:
+            user = await sync_to_async(User.objects.get)(email=email)
+        
+        # Assign role to user (store role name as string)
+        user.role = role.name
+        await sync_to_async(user.save)()
+        
+        return {
+            "status": "success",
+            "message": "User assigned to role successfully",
+            "data": {
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "first_name": getattr(user, 'first_name', ''),
+                    "last_name": getattr(user, 'last_name', '')
+                },
+                "role": {
+                    "id": role.id,
+                    "name": role.name,
+                    "label": role.label
+                }
+            }
+        }
+    except Role.DoesNotExist:
+        return {
+            "status": "error",
+            "message": "Role not found"
+        }
+    except User.DoesNotExist:
+        return {
+            "status": "error",
+            "message": "User not found. Please provide a valid user_id or email."
+        }
+    except Exception as e:
+        # Only print traceback for unexpected errors
+        if "DoesNotExist" not in str(e):
+            import traceback
+            traceback.print_exc()
+        return {
+            "status": "error",
+            "message": f"Failed to assign user to role: {str(e)}"
+        }
+
+@app.delete("/api/roles/{role_id}/users/{user_id}/", 
+            tags=["Role Management"],
+            summary="Remove User from Role",
+            description="Remove a user's assignment from a specific role",
+            response_description="User removal status",
+            responses={
+                200: {
+                    "description": "Successfully removed user from role",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "status": "success",
+                                "message": "User removed from role successfully",
+                                "data": {
+                                    "user": {"id": 1, "email": "user@example.com"},
+                                    "role": {"id": 141, "name": "admin"}
+                                }
+                            }
+                        }
+                    }
+                },
+                404: {
+                    "description": "Role or user not found",
+                    "content": {
+                        "application/json": {
+                            "example": {
+                                "status": "error",
+                                "message": "Role or user not found"
+                            }
+                        }
+                    }
+                }
+            })
+async def remove_user_from_role(role_id: int, user_id: int):
+    """
+    **Remove User from Role**
+    
+    Removes a user's assignment from a specific role. The user's role will be set to the default "user" role.
+    
+    **Path Parameters:**
+    - **role_id** (int): The ID of the role to remove the user from
+    - **user_id** (int): The ID of the user to remove
+    
+    **Returns:**
+    - **status**: "success" or "error"
+    - **message**: Status message
+    - **data** (if success):
+      - **user**: User details (id, email)
+      - **role**: Role details (id, name)
+    """
+    try:
+        from deelflow.models import Role, User
+        
+        # Get user and role
+        user = await sync_to_async(User.objects.get)(id=user_id)
+        role = await sync_to_async(Role.objects.get)(id=role_id)
+        
+        # Check if user is assigned to this role
+        if user.role != role.name:
+            return {
+                "status": "error",
+                "message": "User is not assigned to this role"
+            }
+        
+        # Remove role assignment (set role to empty string or default)
+        user.role = "user"  # Default role
+        await sync_to_async(user.save)()
+        
+        return {
+            "status": "success",
+            "message": "User removed from role successfully",
+            "data": {
+                "user": {
+                    "id": user.id,
+                    "email": user.email
+                },
+                "role": {
+                    "id": role.id,
+                    "name": role.name
+                }
+            }
+        }
+    except (Role.DoesNotExist, User.DoesNotExist) as e:
+        return {
+            "status": "error",
+            "message": f"Role or user not found: {str(e)}"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to remove user from role: {str(e)}"
+        }
+
+@app.get("/api/roles/{role_id}/users/", 
+         tags=["Role Management"],
+         summary="Get Users in Role",
+         description="Retrieve all users assigned to a specific role",
+         response_description="List of users with their role information",
+         responses={
+             200: {
+                 "description": "Successfully retrieved users",
+                 "content": {
+                     "application/json": {
+                         "example": {
+                             "status": "success",
+                             "data": {
+                                 "role": {
+                                     "id": 141,
+                                     "name": "admin",
+                                     "label": "Administrator"
+                                 },
+                                 "users": [
+                                     {
+                                         "id": 1,
+                                         "email": "user@example.com",
+                                         "first_name": "John",
+                                         "last_name": "Doe",
+                                         "role": {"id": 141, "name": "admin", "label": "Administrator"}
+                                     }
+                                 ],
+                                 "total": 1
+                             }
+                         }
+                     }
+                 }
+             },
+             404: {
+                 "description": "Role not found",
+                 "content": {
+                     "application/json": {
+                         "example": {
+                             "status": "error",
+                             "message": "Role not found"
+                         }
+                     }
+                 }
+             }
+         })
+async def get_role_users(role_id: int):
+    """
+    **Get Users Assigned to Role**
+    
+    Retrieves all users assigned to a specific role with their full details.
+    
+    **Path Parameters:**
+    - **role_id** (int): The ID of the role
+    
+    **Returns:**
+    - **status**: "success" or "error"
+    - **data** (if success):
+      - **role**: Role details (id, name, label)
+      - **users**: Array of user objects with (id, email, first_name, last_name, role)
+      - **total**: Total number of users in the role
+    """
+    try:
+        from deelflow.models import Role, User
+        
+        # Get role
+        role = await sync_to_async(Role.objects.get)(id=role_id)
+        
+        # Get all users with this role (role is a string field)
+        users = await sync_to_async(list)(User.objects.filter(role=role.name))
+        
+        users_data = []
+        for user in users:
+            users_data.append({
+                "id": user.id,
+                "email": user.email,
+                "first_name": getattr(user, 'first_name', ''),
+                "last_name": getattr(user, 'last_name', ''),
+                "role": {
+                    "id": role.id,
+                    "name": role.name,
+                    "label": role.label
+                }
+            })
+        
+        return {
+            "status": "success",
+            "data": {
+                "role": {
+                    "id": role.id,
+                    "name": role.name,
+                    "label": role.label
+                },
+                "users": users_data,
+                "total": len(users_data)
+            }
+        }
+    except Role.DoesNotExist:
+        return {
+            "status": "error",
+            "message": "Role not found"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to get role users: {str(e)}"
+        }
+
+@app.put("/api/users/{user_id}/assign-role/", 
+         tags=["Role Management"],
+         summary="Assign Role to User (Alternative)",
+         description="Alternative endpoint to assign a role to a user by user ID",
+         response_description="Role assignment status",
+         responses={
+             200: {
+                 "description": "Successfully assigned role to user",
+                 "content": {
+                     "application/json": {
+                         "example": {
+                             "status": "success",
+                             "message": "Role assigned to user successfully",
+                             "data": {
+                                 "user": {
+                                     "id": 1,
+                                     "email": "user@example.com",
+                                     "first_name": "John",
+                                     "last_name": "Doe"
+                                 },
+                                 "role": {
+                                     "id": 141,
+                                     "name": "admin",
+                                     "label": "Administrator"
+                                 }
+                             }
+                         }
+                     }
+                 }
+             },
+             400: {
+                 "description": "Bad request - missing role_id",
+                 "content": {
+                     "application/json": {
+                         "example": {
+                             "status": "error",
+                             "message": "role_id is required"
+                         }
+                     }
+                 }
+             },
+             404: {
+                 "description": "User or role not found",
+                 "content": {
+                     "application/json": {
+                         "example": {
+                             "status": "error",
+                             "message": "Role or user not found"
+                         }
+                     }
+                 }
+             }
+         })
+async def assign_role_to_user(user_id: int, role_data: dict):
+    """
+    **Assign Role to User (Alternative Endpoint)**
+    
+    Alternative endpoint to assign a role to a user. This endpoint takes the user ID as a path parameter.
+    
+    **Path Parameters:**
+    - **user_id** (int): The ID of the user to assign the role to
+    
+    **Request Body:**
+    - **role_id** (int): The ID of the role to assign
+    
+    **Returns:**
+    - **status**: "success" or "error"
+    - **message**: Status message
+    - **data** (if success):
+      - **user**: User details (id, email, first_name, last_name)
+      - **role**: Role details (id, name, label)
+    
+    **Example Request:**
+    ```json
+    {
+        "role_id": 141
+    }
+    ```
+    """
+    try:
+        from deelflow.models import Role, User
+        
+        # Get role_id from request
+        role_id = role_data.get("role_id")
+        
+        if not role_id:
+            return {
+                "status": "error",
+                "message": "role_id is required"
+            }
+        
+        # Get user and role
+        user = await sync_to_async(User.objects.get)(id=user_id)
+        role = await sync_to_async(Role.objects.get)(id=role_id)
+        
+        # Assign role (store role name as string)
+        user.role = role.name
+        await sync_to_async(user.save)()
+        
+        return {
+            "status": "success",
+            "message": "Role assigned to user successfully",
+            "data": {
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "first_name": getattr(user, 'first_name', ''),
+                    "last_name": getattr(user, 'last_name', '')
+                },
+                "role": {
+                    "id": role.id,
+                    "name": role.name,
+                    "label": role.label
+                }
+            }
+        }
+    except (Role.DoesNotExist, User.DoesNotExist) as e:
+        return {
+            "status": "error",
+            "message": f"Role or user not found: {str(e)}"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to assign role: {str(e)}"
+        }
+
 # Add legacy endpoints for frontend compatibility
 @app.get("/get_roles/", tags=["Role Management"])
 async def get_roles_legacy():
@@ -3479,61 +4732,280 @@ async def create_permission(permission_data: dict):
 
 # ==================== PAYMENT GATEWAY ENDPOINTS ====================
 
+# Create security scheme for Swagger UI (HTTPBearer handles "Bearer" prefix automatically)
+bearer_scheme = HTTPBearer(auto_error=False)
+
 @app.get("/subscription-packs/", tags=["Payments"])
-async def get_subscription_packages():
+async def get_subscription_packages(request: Request):
     """
     **Get Subscription Packages**
     
     Retrieves all available subscription packages from Stripe.
     
+    **Public Endpoint** 🔓
+    - Visible to all users (no authentication required)
+    - Shows available plans so users can view before signing in
+    
     **Returns:**
     - List of subscription packages with pricing and features
     - Package details including Stripe price IDs
+    
+    **Example Request:**
+    ```
+    GET /subscription-packs/
+    ```
     """
     try:
         from app.services.payment_service import PaymentService
         payment_service = PaymentService()
-        return await payment_service.get_subscription_packages()
+        result = await payment_service.get_subscription_packages()
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         return {
             "status": "error",
             "message": f"Failed to get subscription packages: {str(e)}"
         }
 
+# ==================== BLOCKCHAIN: POLYGON (MATIC) ====================
+
+@app.get("/polygon/network", tags=["Blockchain"])
+async def polygon_network_info():
+    """
+    **Polygon Network Info**
+
+    Returns basic connection and network information for the configured Polygon RPC.
+    """
+    try:
+        from app.services.polygon_service import PolygonService
+        svc = PolygonService()
+        return {"status": "success", "data": svc.get_network_info()}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/polygon/balance/{address}", tags=["Blockchain"])
+async def polygon_get_balance(address: str):
+    """
+    **Get MATIC Balance**
+
+    Returns the MATIC balance for the provided address.
+    """
+    try:
+        from app.services.polygon_service import PolygonService
+        svc = PolygonService()
+        return {"status": "success", "data": svc.get_balance(address)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+class PolygonTransferRequest(BaseModel):
+    to_address: str
+    amount_matic: float
+    private_key: Optional[str] = None  # optional; will use server key if not provided
+
+
+@app.post("/polygon/transfer", tags=["Blockchain"])
+async def polygon_transfer(req: PolygonTransferRequest, current_user: dict = Depends(get_current_user)):
+    """
+    **Transfer Native MATIC**
+
+    Sends MATIC from the provided private key or the server wallet (if configured).
+    Authentication required to prevent abuse.
+    """
+    try:
+        from app.services.polygon_service import PolygonService
+        svc = PolygonService()
+        tx = svc.transfer_native(req.to_address, req.amount_matic, req.private_key)
+        return {"status": "success", "data": tx}
+    except HTTPException:
+        raise
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 @app.post("/create-checkout-session/", tags=["Payments"])
-async def create_checkout_session(request_data: dict):
+async def create_checkout_session(
+    request_data: CheckoutSessionCreate,
+    current_user: dict = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)
+):
     """
     **Create Stripe Checkout Session**
     
     Creates a Stripe checkout session for subscription purchase.
     
+    **Authentication Required** 🔐
+    - User must be logged in to create a payment session
+    - Include JWT token in Authorization header: `Bearer <token>`
+    
+    This endpoint is protected in Swagger via the Bearer auth scheme (lock icon). Click "Authorize" and paste your token.
+    
     **Request Body:**
-    - price_id: Stripe price ID for the subscription
-    - customer_id: Optional customer ID
-    - success_url: Optional success redirect URL
-    - cancel_url: Optional cancel redirect URL
+    
+    **Minimum Required:** Only `price_id` is required. All other fields are optional.
+    
+    **Example 1 - Minimum (Only price_id):**
+    ```json
+    {
+        "price_id": "price_1SM4xoE0wE8Cg1knewTgPQf5"
+    }
+    ```
+    
+    **Example 2 - With Optional Fields:**
+    ```json
+    {
+        "price_id": "price_1SM4xoE0wE8Cg1knewTgPQf5",
+        "customer_id": "cus_xxxxx",
+        "success_url": "http://localhost:3000/payment/success",
+        "cancel_url": "http://localhost:3000/payment/cancel",
+        "payment_gateway": "stripe"
+    }
+    ```
+    
+    **Request Body Fields:**
+    - **price_id** (✅ REQUIRED): Stripe price ID for the subscription plan
+    - **customer_id** (optional): Existing Stripe customer ID
+    - **success_url** (optional): Redirect URL after successful payment (default: auto-generated)
+    - **cancel_url** (optional): Redirect URL if user cancels (default: auto-generated)
+    - **payment_gateway** (optional): Payment gateway to use (default: "stripe")
+    
+    **Responses:**
+    - 200: Checkout session URL and details
+    - 401: Not authenticated (please sign in to buy a plan)
     
     **Returns:**
     - Checkout session URL and details
+    - Transaction saved to database
+    
+    **Example Response:**
+    ```json
+    {
+        "status": "success",
+        "data": {
+            "session_id": "cs_test_xxxxx",
+            "url": "https://checkout.stripe.com/c/pay/cs_test_xxxxx",
+            "customer_id": "cus_xxxxx"
+        }
+    }
+    ```
     """
     try:
         from app.services.payment_service import PaymentService
+        from deelflow.models import PaymentTransaction, User, SubscriptionPackage
+        import uuid
+        from datetime import datetime
+        
         payment_service = PaymentService()
         
-        price_id = request_data.get("price_id")
-        if not price_id:
+        # Get user from authentication
+        # The get_current_user dependency should return the decoded JWT token payload
+        # which contains user_id, email, role, exp, iat, type
+        
+        # Extract user_id - handle both plain payload and accidental response wrappers
+        user_id = None
+        
+        if isinstance(current_user, dict):
+            # Preferred: top-level payload fields
+            user_id = (
+                current_user.get("user_id") or
+                current_user.get("sub") or  # Standard JWT subject claim
+                current_user.get("id")
+            )
+            
+            # Fallback: if someone accidentally passed a wrapped structure like {status, data}
+            if not user_id and ("status" in current_user and "data" in current_user):
+                data_field = current_user.get("data")
+                if isinstance(data_field, dict):
+                    user_id = (
+                        data_field.get("user_id") or
+                        data_field.get("id") or
+                        (data_field.get("user", {}).get("id") if isinstance(data_field.get("user"), dict) else None) or
+                        (data_field.get("tokens", {}).get("user_id") if isinstance(data_field.get("tokens"), dict) else None)
+                    )
+        
+        if not user_id:
+            # If user_id is not found, there might be an issue with token structure
+            # Log full structure for debugging
+            logger.error(f"[CHECKOUT] User ID not found in token payload.")
+            logger.error(f"[CHECKOUT] Token payload keys: {list(current_user.keys()) if isinstance(current_user, dict) else 'Not a dict'}")
+            logger.error(f"[CHECKOUT] Token payload: {current_user}")
             return {
                 "status": "error",
-                "message": "Price ID is required"
+                "message": f"User not found in token. Please login again. Token payload structure: {list(current_user.keys()) if isinstance(current_user, dict) else type(current_user).__name__}. The token should contain 'user_id' field."
             }
         
-        return await payment_service.create_checkout_session(
-            price_id=price_id,
-            customer_id=request_data.get("customer_id"),
-            success_url=request_data.get("success_url"),
-            cancel_url=request_data.get("cancel_url")
+        logger.debug(f"[CHECKOUT] Extracted user_id: {user_id}")
+        
+        # Get user and package info
+        try:
+            user = await sync_to_async(User.objects.get)(id=user_id)
+        except User.DoesNotExist:
+            return {
+                "status": "error",
+                "message": f"User with ID {user_id} not found in database"
+            }
+        
+        payment_gateway = request_data.payment_gateway or "stripe"
+        
+        # Get customer_id - use provided or user's Stripe customer ID
+        customer_id = request_data.customer_id
+        if not customer_id and hasattr(user, 'stripe_customer_id'):
+            customer_id = user.stripe_customer_id
+        
+        # Create checkout session
+        session_result = await payment_service.create_checkout_session(
+            price_id=request_data.price_id,
+            customer_id=customer_id,
+            success_url=request_data.success_url,
+            cancel_url=request_data.cancel_url
         )
+        
+        # Save transaction to database
+        if session_result.get("status") == "success":
+            transaction_id = f"{payment_gateway}_{uuid.uuid4().hex[:16]}"
+            payment_data = session_result.get("data", {})
+            session_id = payment_data.get("session_id")
+            
+            # Try to get plan details if available
+            plan_name = "Unknown Plan"
+            amount = 0
+            currency = "USD"
+            
+            try:
+                # Get amount from Stripe price (would need to fetch)
+                # For now, we'll save with session_id
+                plan_name = f"Plan {request_data.price_id[-10:]}"
+            except:
+                pass
+            
+            # Create payment transaction record
+            transaction = await sync_to_async(PaymentTransaction.objects.create)(
+                user=user,
+                plan_id=request_data.price_id,
+                plan_name=plan_name,
+                amount=amount,  # Would need to fetch from Stripe
+                currency=currency,
+                payment_gateway=payment_gateway,
+                transaction_id=transaction_id,
+                payment_intent_id=session_id,
+                status="pending",
+                description=f"Payment for {plan_name}",
+                metadata={
+                    "session_id": session_id,
+                    "price_id": request_data.price_id
+                }
+            )
+            
+            # Update response with transaction info
+            session_result["data"]["transaction_id"] = transaction_id
+            session_result["data"]["user_id"] = user_id
+            session_result["message"] = "Checkout session created. Transaction saved."
+        
+        return session_result
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return {
             "status": "error",
             "message": f"Failed to create checkout session: {str(e)}"
@@ -3739,6 +5211,303 @@ async def create_payment_intent(request_data: PaymentIntentCreate):
         return {
             "status": "error",
             "message": f"Failed to create payment intent: {str(e)}"
+        }
+
+# ==================== SIGNNOW API INTEGRATION ENDPOINTS ====================
+
+@app.get("/api/signnow/test/", tags=["SignNow"])
+async def test_signnow_connection():
+    """
+    **Test SignNow API Connection**
+    
+    Tests the connection to SignNow API and verifies authentication.
+    
+    **Returns:**
+    - Connection status
+    - Authentication status
+    - User information
+    """
+    try:
+        from app.services.signnow_service import signnow_service
+        
+        result = signnow_service.test_connection()
+        return result
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to test SignNow connection: {str(e)}"
+        }
+
+@app.get("/api/signnow/user/", tags=["SignNow"])
+async def get_signnow_user():
+    """
+    **Get SignNow User Information**
+    
+    Retrieves authenticated user information from SignNow.
+    
+    **Returns:**
+    - User email
+    - User ID
+    - Account information
+    """
+    try:
+        from app.services.signnow_service import signnow_service
+        
+        result = signnow_service.get_user_info()
+        return result
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to get user info: {str(e)}"
+        }
+
+@app.get("/api/signnow/documents/", tags=["SignNow"])
+async def get_signnow_documents(limit: int = 100):
+    """
+    **Get SignNow Documents**
+    
+    Retrieves list of documents from SignNow account.
+    
+    **Query Parameters:**
+    - limit: Maximum number of documents (default: 100)
+    
+    **Returns:**
+    - List of documents
+    """
+    try:
+        from app.services.signnow_service import signnow_service
+        
+        result = signnow_service.get_documents(limit=limit)
+        return result
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to get documents: {str(e)}"
+        }
+
+@app.post("/api/signnow/documents/", tags=["SignNow"])
+async def create_signnow_document(
+    document_name: str,
+    file_path: Optional[str] = None
+):
+    """
+    **Create SignNow Document**
+    
+    Creates a new document in SignNow.
+    
+    **Request Parameters:**
+    - document_name: Name of the document
+    - file_path: Path to document file (optional)
+    
+    **Returns:**
+    - Document ID
+    - Document information
+    """
+    try:
+        from app.services.signnow_service import signnow_service
+        
+        result = signnow_service.create_document(
+            document_name=document_name,
+            file_path=file_path
+        )
+        return result
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to create document: {str(e)}"
+        }
+
+@app.post("/api/signnow/upload/", tags=["SignNow"])
+async def upload_signnow_document(
+    file: UploadFile = File(...),
+    document_name: Optional[str] = None
+):
+    """
+    **Upload Document to SignNow**
+    
+    Uploads a document file to SignNow for signing.
+    
+    **Request Body:**
+    - file: Document file (PDF, DOCX, etc.)
+    - document_name: Optional custom name for the document
+    
+    **Returns:**
+    - Document ID
+    - Document information
+    """
+    try:
+        from app.services.signnow_service import signnow_service
+        import tempfile
+        import os
+        
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_path = tmp_file.name
+        
+        try:
+            # Upload to SignNow
+            result = signnow_service.upload_document(
+                file_path=tmp_path,
+                document_name=document_name or file.filename
+            )
+            return result
+        finally:
+            # Clean up temp file
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to upload document: {str(e)}"
+        }
+
+@app.post("/api/signnow/invite/", tags=["SignNow"])
+async def invite_signnow_signers(
+    document_id: str = Body(...),
+    signers: List[Dict[str, Any]] = Body(...),
+    subject: Optional[str] = Body(None),
+    message: Optional[str] = Body(None)
+):
+    """
+    **Invite Signers to Document**
+    
+    Sends signature invitations to one or more signers.
+    
+    **Request Body:**
+    - document_id: SignNow document ID
+    - signers: List of signer objects with email, order (optional), role (optional)
+    - subject: Email subject (optional)
+    - message: Email message (optional)
+    
+    **Returns:**
+    - Invitation status
+    - Invitation IDs
+    """
+    try:
+        from app.services.signnow_service import signnow_service
+        
+        result = signnow_service.invite_signers(
+            document_id=document_id,
+            signers=signers,
+            subject=subject,
+            message=message
+        )
+        return result
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to send invitation: {str(e)}"
+        }
+
+@app.get("/api/signnow/status/{document_id}", tags=["SignNow"])
+async def get_signnow_document_status(document_id: str):
+    """
+    **Get Document Status**
+    
+    Retrieves the current status and information about a document.
+    
+    **Path Parameters:**
+    - document_id: SignNow document ID
+    
+    **Returns:**
+    - Document status
+    - Signing progress
+    - Signer information
+    """
+    try:
+        from app.services.signnow_service import signnow_service
+        
+        result = signnow_service.get_document_status(document_id=document_id)
+        return result
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to get document status: {str(e)}"
+        }
+
+@app.get("/api/signnow/download/{document_id}", tags=["SignNow"])
+async def download_signnow_document(
+    document_id: str,
+    save_path: Optional[str] = None
+):
+    """
+    **Download Document**
+    
+    Downloads a completed or in-progress document from SignNow.
+    
+    **Path Parameters:**
+    - document_id: SignNow document ID
+    
+    **Query Parameters:**
+    - save_path: Optional path to save the downloaded file
+    
+    **Returns:**
+    - Document file content or save confirmation
+    """
+    try:
+        from app.services.signnow_service import signnow_service
+        
+        result = signnow_service.download_document(
+            document_id=document_id,
+            file_path=save_path
+        )
+        return result
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to download document: {str(e)}"
+        }
+
+@app.post("/api/signnow/documents/{document_id}/send/", tags=["SignNow"])
+async def send_signnow_document(
+    document_id: str,
+    signer_email: str,
+    subject: Optional[str] = None,
+    message: Optional[str] = None
+):
+    """
+    **Send Document for Signature (Legacy)**
+    
+    Sends a SignNow document to a signer for signature.
+    For multiple signers, use /api/signnow/invite/ instead.
+    
+    **Path Parameters:**
+    - document_id: SignNow document ID
+    
+    **Request Body:**
+    - signer_email: Email address of the signer
+    - subject: Email subject (optional)
+    - message: Email message (optional)
+    
+    **Returns:**
+    - Sending status
+    - Invitation ID
+    """
+    try:
+        from app.services.signnow_service import signnow_service
+        
+        result = signnow_service.send_document_for_signature(
+            document_id=document_id,
+            signer_email=signer_email,
+            subject=subject,
+            message=message
+        )
+        return result
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to send document: {str(e)}"
         }
 
 if __name__ == "__main__":

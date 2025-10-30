@@ -5,7 +5,7 @@ Handles complex permission structure with enabled booleans
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional, Dict, Any
-from app.core.security import get_current_user, require_permission
+from app.core.auth_middleware import get_current_user, require_permission
 from app.core.exceptions import NotFoundError, AuthorizationError
 from app.services.role_service import RoleService
 from app.schemas.role import RoleResponse, RoleCreate, RoleUpdate, RoleListResponse, PermissionResponse

@@ -2,7 +2,7 @@
 Payment-related Pydantic schemas
 """
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from decimal import Decimal
@@ -70,3 +70,40 @@ class PaymentStats(BaseModel):
     failed_payments: int
     payments_by_status: Dict[str, int]
     monthly_revenue: List[Dict[str, Any]]
+
+class CheckoutSessionCreate(BaseModel):
+    """Create Stripe checkout session request model
+    
+    **Minimum Required:** Only `price_id` is required. All other fields are optional.
+    
+    **Examples:**
+    - Minimal: `{"price_id": "price_xxx"}`
+    - Full: `{"price_id": "price_xxx", "success_url": "...", "cancel_url": "..."}`
+    """
+    price_id: str = Field(..., description="Stripe price ID for the subscription plan (REQUIRED)")
+    customer_id: Optional[str] = Field(None, description="Existing Stripe customer ID (optional)")
+    success_url: Optional[str] = Field(None, description="Redirect URL after successful payment (optional)")
+    cancel_url: Optional[str] = Field(None, description="Redirect URL if user cancels (optional)")
+    payment_gateway: str = Field("stripe", description="Payment gateway to use (default: 'stripe')")
+    
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "description": "Minimum required (only price_id)",
+                    "value": {
+                        "price_id": "price_1SM4xoE0wE8Cg1knewTgPQf5"
+                    }
+                },
+                {
+                    "description": "With optional fields",
+                    "value": {
+                        "price_id": "price_1SM4xoE0wE8Cg1knewTgPQf5",
+                        "customer_id": "cus_xxxxx",
+                        "success_url": "http://localhost:3000/payment/success",
+                        "cancel_url": "http://localhost:3000/payment/cancel",
+                        "payment_gateway": "stripe"
+                    }
+                }
+            ]
+        }

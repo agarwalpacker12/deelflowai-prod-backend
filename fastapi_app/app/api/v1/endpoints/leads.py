@@ -4,7 +4,7 @@ Lead management endpoints
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional
-from app.core.security import get_current_user, require_permission
+from app.core.auth_middleware import get_current_user, require_permission
 from app.core.exceptions import NotFoundError, AuthorizationError
 from app.services.lead_service import LeadService
 from app.schemas.lead import LeadResponse, LeadCreate, LeadUpdate, DiscoveredLeadResponse

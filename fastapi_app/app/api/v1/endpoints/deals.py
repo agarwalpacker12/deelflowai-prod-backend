@@ -4,7 +4,7 @@ Deal management endpoints
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import List, Optional
-from app.core.security import get_current_user, require_permission
+from app.core.auth_middleware import get_current_user, require_permission
 from app.core.exceptions import NotFoundError, AuthorizationError
 from app.services.deal_service import DealService
 from app.schemas.deal import DealResponse, DealCreate, DealUpdate
